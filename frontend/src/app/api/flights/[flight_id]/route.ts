@@ -1,20 +1,25 @@
-import { Pool } from 'pg';
-import { NextResponse } from 'next/server';
+import { Pool } from 'pg'
+import { NextResponse } from 'next/server'
 
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-});
+	connectionString: process.env.DATABASE_URL
+})
 
+export async function GET(
+	request: Request,
+	context: { params: { flight_id: string } }
+) {
+	const flight_id = context.params.flight_id
 
-export async function GET(request: Request, context: { params: { flight_id: string } }) {
-    const  flight_id  = context.params.flight_id;
+	if (!flight_id) {
+		return NextResponse.json(
+			{ error: 'Flight ID is required' },
+			{ status: 400 }
+		)
+	}
 
-    if (!flight_id) {
-        return NextResponse.json({ error: 'Flight ID is required' }, { status: 400 });
-    }
-
-    try {
-        const sqlQuery = `
+	try {
+		const sqlQuery = `
             SELECT
                 f.flight_id, s.flight_number, f.departure_datetime, f.arrival_datetime, f.base_price,
                 dep.city AS departure_city, dep.airport_name as departure_airport, dep.iata_code as departure_iata,
@@ -29,19 +34,21 @@ export async function GET(request: Request, context: { params: { flight_id: stri
             JOIN Airlines arl ON ac.airline_id = arl.airline_id
             JOIN Aircraft_Models am ON ac.model_id = am.model_id
             WHERE f.flight_id = $1;
-        `;
-        
-        const result = await pool.query(sqlQuery, [flight_id]);
+        `
 
-        if (result.rows.length === 0) {
-            return NextResponse.json({ error: 'Flight not found' }, { status: 404 });
-        }
+		const result = await pool.query(sqlQuery, [flight_id])
 
-        // Возвращаем один объект, а не массив
-        return NextResponse.json(result.rows[0]);
+		if (result.rows.length === 0) {
+			return NextResponse.json({ error: 'Flight not found' }, { status: 404 })
+		}
 
-    } catch (error) {
-        console.error('Failed to fetch flight details:', error);
-        return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
-    }
+		// Возвращаем один объект, а не массив
+		return NextResponse.json(result.rows[0])
+	} catch (error) {
+		console.error('Failed to fetch flight details:', error)
+		return NextResponse.json(
+			{ error: 'Internal Server Error' },
+			{ status: 500 }
+		)
+	}
 }

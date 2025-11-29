@@ -1,5 +1,15 @@
 {
-    "cSpell.words": [
-        "Некорректный"
-    ]
-}
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[typescript]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "esbenp.prettier-vscode"
+  },
+  // Указываем явный путь к конфигу, если он не в корне открытой папки
+  "prettier.configPath": "frontend/.prettierrc",
+  "prettier.prettierPath": "frontend/node_modules/prettier",
+  // Важно: говорим Prettier искать модули (плагины) внутри папки frontend
+  "prettier.resolveGlobalModules": false
+  }

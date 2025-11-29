@@ -80,6 +80,7 @@ DROP TABLE IF EXISTS Bookings, Passengers, Flights, Schedules, Aircrafts, Aircra
         seat_number VARCHAR(4),
         status VARCHAR(50) NOT NULL CHECK (status IN ('Confirmed', 'Cancelled')),
         check_in_status VARCHAR(50) NOT NULL DEFAULT 'Pending' CHECK (check_in_status IN ('Pending', 'Checked-in', 'No-show')),
+        baggage_option VARCHAR(50) NOT NULL DEFAULT 'no_baggage',
         ticket_number VARCHAR(20) UNIQUE NOT NULL
     );
     
