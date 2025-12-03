@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm, useFieldArray } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -16,7 +16,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Form } from '@/components/ui/form'
 import { PassengerCard } from '@/components/custom-ui/booking/PassengerCard'
-
+import { SeatMap } from '@/components/custom-ui/booking/SeatMap'
 interface Props {
 	flightId: number
 	initialCounts: { adults: number; children: number; infants: number }
@@ -34,7 +34,6 @@ const BAGGAGE_LABELS: Record<string, string> = {
 
 export function BookingForm({ flightId, initialCounts, baggageOption }: Props) {
 	const router = useRouter()
-
 	const generateDefaultPassengers = () => {
 		const adults = Array(initialCounts.adults)
 			.fill(null)
@@ -101,7 +100,7 @@ export function BookingForm({ flightId, initialCounts, baggageOption }: Props) {
 	})
 
 	const { isSubmitting } = form.formState
-
+	
 	const onSubmit = useCallback(
 		async (values: BookingFormValues) => {
 			try {
@@ -129,7 +128,7 @@ export function BookingForm({ flightId, initialCounts, baggageOption }: Props) {
 				toast.error('Не удалось выполнить бронирование. Попробуйте позже.')
 			}
 		},
-		[form, router, baggageOption] // Добавили baggageOption в зависимости
+		[form, router, baggageOption ]
 	)
 
 	return (

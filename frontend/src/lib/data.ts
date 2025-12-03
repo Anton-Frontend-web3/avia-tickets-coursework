@@ -1,9 +1,7 @@
-import { Pool } from 'pg'
+
 import 'server-only'
 
-const pool = new Pool({
-	connectionString: process.env.DATABASE_URL
-})
+import { pool } from '@/lib/db' 
 export type SelectOption = {
 	value: string // Будет содержать ID
 	label: string // Будет содержать понятное имя

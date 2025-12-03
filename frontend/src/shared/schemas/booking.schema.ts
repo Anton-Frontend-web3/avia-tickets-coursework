@@ -52,7 +52,7 @@ export const singlePassengerSchema = z
 			.string()
 			.min(1, { message: 'Введите номер документа.' })
 			.max(20, { message: 'Номер слишком длинный (макс. 20 символов).' }),
-		validUntil: z.string().optional()
+		validUntil: z.string().optional(),
 	})
 	.superRefine((data, ctx) => {
 		const birthDate = parseISO(data.birthDate)
