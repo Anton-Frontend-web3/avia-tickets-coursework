@@ -1,7 +1,6 @@
-
 import 'server-only'
 
-import { pool } from '@/lib/db' 
+import { pool } from '@/lib/db'
 export type SelectOption = {
 	value: string // Будет содержать ID
 	label: string // Будет содержать понятное имя
@@ -10,6 +9,7 @@ export type SelectOption = {
 import { IFlight } from '@/app/search/page'
 import { IPassengerCheck } from '@/shared/types/pessenger.type'
 import { BookingDetails } from '@/shared/types/bookins.interface'
+import { differenceInYears } from 'date-fns'
 export async function getFlightDetailsById(
 	flightId: string
 ): Promise<IFlight | null> {
@@ -157,15 +157,18 @@ export async function getPassengersByFlightId(
 		throw new Error('Failed to fetch passengers.')
 	}
 }
-export async function getBookingDetails(bookingId: string): Promise<BookingDetails | null> {
-    try {
-        // Мы джоиним не только passengers, но и flights/airports, 
-        // чтобы получить полную информацию о билете в одном запросе.
-        const sqlQuery = `
+export async function getBookingDetails(
+	bookingId: string
+): Promise<BookingDetails | null> {
+	try {
+		// Мы джоиним не только passengers, но и flights/airports,
+		// чтобы получить полную информацию о билете в одном запросе.
+		const sqlQuery = `
             SELECT 
                 b.booking_id,
                 b.baggage_option,
                 b.ticket_number,
+                b.booking_reference,
                 b.status,
                 b.seat_number,
                 b.booking_datetime,
@@ -198,18 +201,112 @@ export async function getBookingDetails(bookingId: string): Promise<BookingDetai
             JOIN Airlines arl ON ac.airline_id = arl.airline_id
             
             WHERE b.booking_id = $1;
-        `;
+        `
 
-        const result = await pool.query(sqlQuery, [bookingId]);
+		const result = await pool.query(sqlQuery, [bookingId])
 
-        if (result.rows.length === 0) {
-            return null;
-        }
+		if (result.rows.length === 0) {
+			return null
+		}
 
-        return result.rows[0] as BookingDetails;
+		return result.rows[0] as BookingDetails
+	} catch (error) {
+		console.error('Database Error: Failed to fetch booking details.', error)
+		return null
+	}
+}
+export async function getCheckInSession(ticketNumber: string) {
+    // 1. Получаем PNR ... (без изменений)
+    const refRes = await pool.query(
+        `SELECT booking_reference, flight_id FROM Bookings WHERE ticket_number = $1`, 
+        [ticketNumber]
+    );
+    if (refRes.rows.length === 0) return null;
+    const { booking_reference, flight_id } = refRes.rows[0];
 
-    } catch (error) {
-        console.error('Database Error: Failed to fetch booking details.', error);
-        return null;
-    }
+    // 2. Получаем данные рейса СНАЧАЛА, чтобы знать дату вылета
+    const flightRes = await pool.query(`
+        SELECT 
+            f.flight_id, 
+            f.departure_datetime,
+            am.seat_map
+        FROM Flights f
+        JOIN Aircrafts a ON f.aircraft_id = a.aircraft_id
+        JOIN Aircraft_Models am ON a.model_id = am.model_id
+        WHERE f.flight_id = $1
+    `, [flight_id]);
+
+    const flight = flightRes.rows[0];
+
+    // 3. Теперь тащим пассажиров и сразу считаем, кто младенец
+    const groupRes = await pool.query(`
+        SELECT 
+            b.ticket_number,
+            b.seat_number,
+            b.check_in_status,
+            p.first_name,
+            p.last_name,
+            p.birth_date -- Нам нужна дата рождения
+        FROM Bookings b
+        JOIN Passengers p ON b.passenger_id = p.passenger_id
+        WHERE b.booking_reference = $1 AND b.flight_id = $2
+        ORDER BY p.birth_date -- Сначала старшие, младенцы в конце
+    `, [booking_reference, flight_id]);
+
+    // Добавляем флаг is_infant
+    const passengers = groupRes.rows.map(p => {
+        const age = differenceInYears(new Date(flight.departure_datetime), new Date(p.birth_date));
+        return {
+            ...p,
+            is_infant: age < 2 // Младенец, если меньше 2 лет
+        };
+    });
+
+    // 4. Занятые места (без изменений)
+    const occupiedRes = await pool.query(`
+        SELECT seat_number FROM Bookings 
+        WHERE flight_id = $1 AND seat_number IS NOT NULL AND status = 'Confirmed'
+    `, [flight_id]);
+
+    return {
+        flight,
+        passengers, 
+        occupiedSeats: occupiedRes.rows.map(r => r.seat_number)
+    };
+}
+
+async function getBoardingPasses(ticketNumber: string) {
+    // 1. Узнаем PNR
+    const refRes = await pool.query(
+        `SELECT booking_reference FROM Bookings WHERE ticket_number = $1`, 
+        [ticketNumber]
+    );
+    
+    if (refRes.rows.length === 0) return [];
+    const { booking_reference } = refRes.rows[0];
+
+    // 2. Ищем все посадочные талоны этой группы
+    const res = await pool.query(`
+        SELECT 
+            b.ticket_number,
+            b.seat_number,
+            p.first_name, p.last_name,
+            f.departure_datetime, f.arrival_datetime,
+            dep.iata_code as dep_code, dep.city as dep_city,
+            arr.iata_code as arr_code, arr.city as arr_city,
+            s.flight_number,
+            arl.name as airline
+        FROM Bookings b
+        JOIN Passengers p ON b.passenger_id = p.passenger_id
+        JOIN Flights f ON b.flight_id = f.flight_id
+        JOIN Schedules s ON f.schedule_id = s.schedule_id
+        JOIN Airports dep ON s.departure_airport_id = dep.airport_id
+        JOIN Airports arr ON s.arrival_airport_id = arr.airport_id
+        JOIN Aircrafts a ON f.aircraft_id = a.aircraft_id
+        JOIN Airlines arl ON a.airline_id = arl.airline_id
+        WHERE b.booking_reference = $1 AND b.check_in_status = 'Checked-in'
+        ORDER BY p.last_name
+    `, [booking_reference]);
+
+    return res.rows;
 }

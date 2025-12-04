@@ -5,8 +5,8 @@ import { usePathname } from 'next/navigation'
 import { signOut, useSession } from 'next-auth/react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { LogIn, LogOut, User, Ticket } from 'lucide-react'
-import { Menu } from 'lucide-react' // <-- Иконка для бургера
+// 1. Добавляем иконку CheckCircle
+import { LogIn, LogOut, User, Ticket, Menu, CheckCircle } from 'lucide-react'
 import {
 	Sheet,
 	SheetContent,
@@ -14,15 +14,17 @@ import {
 	SheetTitle,
 	SheetTrigger
 } from '@/components/ui/sheet'
-// Определяем наши навигационные ссылки
+
+// 2. Добавляем ссылку на регистрацию в массив
 const navLinks = [
 	{ href: '/search', label: 'Билеты', icon: Ticket },
-	{ href: '/profile', label: 'Профиль', icon: User, protected: true } // Защищенная ссылка
+	// Ссылка на регистрацию (доступна всем)
+	{ href: '/check-in', label: 'Регистрация', icon: CheckCircle },
+	{ href: '/profile', label: 'Профиль', icon: User, protected: true }
 ]
 
 export function Header() {
 	const pathname = usePathname()
-	// Хук useSession для получения данных о сессии на клиенте
 	const { data: session, status } = useSession()
 	const isLoading = status === 'loading'
 
@@ -36,10 +38,9 @@ export function Header() {
 					AviaApp
 				</Link>
 
-				{/* --- НАВИГАЦИЯ ДЛЯ ДЕСКТОПА (без изменений) --- */}
+				{/* --- НАВИГАЦИЯ ДЛЯ ДЕСКТОПА --- */}
 				<div className='hidden items-center gap-6 md:flex'>
 					{navLinks.map(link => {
-						// Не показываем защищенные ссылки, если пользователь не авторизован
 						if (link.protected && !session) return null
 
 						const isActive = pathname.startsWith(link.href)
@@ -48,11 +49,11 @@ export function Header() {
 								key={link.href}
 								href={link.href}
 								className={cn(
-									'text-sm font-medium transition-colors hover:text-blue-600',
+									'flex items-center text-sm font-medium transition-colors hover:text-blue-600',
 									isActive ? 'text-blue-600' : 'text-gray-500'
 								)}
 							>
-								<link.icon className='mr-1 inline-block h-4 w-4' />
+								<link.icon className='mr-1.5 h-4 w-4' />
 								{link.label}
 							</Link>
 						)
@@ -92,8 +93,6 @@ export function Header() {
 
 					{/* --- НАВИГАЦИЯ ДЛЯ МОБИЛЬНЫХ --- */}
 					<div className='md:hidden'>
-						{' '}
-						{/* <-- Этот блок виден ТОЛЬКО на экранах < 768px */}
 						<Sheet>
 							<SheetTrigger asChild>
 								<Button
@@ -108,20 +107,24 @@ export function Header() {
 									<SheetTitle>Навигация</SheetTitle>
 								</SheetHeader>
 								<div className='mt-6 flex flex-col space-y-4'>
-									{/* Рендерим те же самые ссылки, но в вертикальном виде */}
 									{navLinks.map(link => {
 										if (link.protected && !session) return null
+
+										const isActive = pathname.startsWith(link.href)
 										return (
 											<Link
 												key={link.href}
 												href={link.href}
-												className='text-lg font-medium'
+												className={cn(
+													'flex items-center text-lg font-medium',
+													isActive ? 'text-blue-600' : 'text-gray-700'
+												)}
 											>
+												<link.icon className='mr-2 h-5 w-5' />
 												{link.label}
 											</Link>
 										)
 									})}
-									{/* Добавляем сюда кнопки входа/выхода для мобильной версии */}
 									<hr className='my-4' />
 									{session ? (
 										<Button
@@ -129,6 +132,7 @@ export function Header() {
 											size='sm'
 											onClick={() => signOut({ callbackUrl: '/' })}
 										>
+											<LogOut className='mr-2 h-4 w-4' />
 											Выйти
 										</Button>
 									) : (
@@ -140,6 +144,7 @@ export function Header() {
 												size='sm'
 												className='w-full'
 											>
+												<LogIn className='mr-2 h-4 w-4' />
 												Войти
 											</Button>
 										</Link>

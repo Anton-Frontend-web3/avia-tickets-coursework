@@ -20,7 +20,7 @@ export default async function FlightDetailPage({
 	if (!flight) {
 		return <div>Рейс не найден или произошла ошибка.</div>
 	}
-	const baggageOption = (resolvedSearchParams.baggage as string) || 'no_baggage';
+	const baggageOption = (resolvedSearchParams.baggage as string) || 'no_baggage'
 	// 3. Извлекаем количество пассажиров из URL или ставим дефолтные значения
 	const initialCounts = {
 		adults: Number(resolvedSearchParams.adults) || 1,

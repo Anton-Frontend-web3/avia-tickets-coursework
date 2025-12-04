@@ -83,6 +83,7 @@ CREATE TABLE Bookings (
     flight_id INT NOT NULL REFERENCES Flights(flight_id),
     passenger_id INT NOT NULL REFERENCES Passengers(passenger_id),
     booking_datetime TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    booking_reference VARCHAR(10) NOT NULL,
     seat_number VARCHAR(4),
     status VARCHAR(50) NOT NULL CHECK (status IN ('Confirmed', 'Cancelled')),
     check_in_status VARCHAR(50) NOT NULL DEFAULT 'Pending' CHECK (check_in_status IN ('Pending', 'Checked-in', 'No-show')),
@@ -113,6 +114,7 @@ CREATE INDEX idx_flights_departure_datetime ON Flights(departure_datetime);
 CREATE INDEX idx_airports_city ON Airports(city);
 CREATE INDEX idx_reservations_flight ON seat_reservations(flight_id);
 CREATE INDEX idx_reservations_expires ON seat_reservations(expires_at);
+CREATE INDEX idx_bookings_reference ON Bookings(booking_reference);
 
 -- 9. Триггер генерации рейсов
 CREATE OR REPLACE FUNCTION generate_flights_for_schedule()

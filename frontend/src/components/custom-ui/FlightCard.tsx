@@ -1,17 +1,17 @@
-// src/components/custom-ui/FlightCard.tsx
 'use client'
 
 import { memo, useState } from 'react'
 import Image from 'next/image'
-import { Upload } from 'lucide-react'
+import { Upload, Check } from 'lucide-react' // Добавил иконку Check для обратной связи
+import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
+import { toast } from 'sonner' // Для уведомлений
 
 import { IFlight } from '@/app/search/page'
 import { formatTime, calculateDuration, formatDateWithDay } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 
 import { BaggageOption, BaggageSelector } from './BaggageSelector'
-import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
 
 const baggageOptions: BaggageOption[] = [
 	{ id: 'no_baggage', name: 'Без багажа', price: 0 },
@@ -19,20 +19,22 @@ const baggageOptions: BaggageOption[] = [
 	{ id: 'baggage_20', name: 'Багаж 20 кг', price: 3599 }
 ]
 
-interface IFlightCard{
-	flight: IFlight & { booking_id?: number;baggage_option?: string }
-	isBooked?:boolean
+interface IFlightCard {
+	flight: IFlight & { booking_id?: number; baggage_option?: string }
+	isBooked?: boolean
 }
 
-
 function FlightCardComponent({ flight, isBooked = false }: IFlightCard) {
-	const savedBaggage = isBooked && flight.baggage_option 
-        ? baggageOptions.find(b => b.id === flight.baggage_option) 
-        : null;
+	const [isCopied, setIsCopied] = useState(false) // Состояние для анимации иконки
 
-    const [selectedBaggage, setSelectedBaggage] = useState<BaggageOption>(
-        savedBaggage || baggageOptions[0]
-    )
+	const savedBaggage =
+		isBooked && flight.baggage_option
+			? baggageOptions.find(b => b.id === flight.baggage_option)
+			: null
+
+	const [selectedBaggage, setSelectedBaggage] = useState<BaggageOption>(
+		savedBaggage || baggageOptions[0]
+	)
 
 	const departureTime = formatTime(flight.departure_datetime)
 	const arrivalTime = formatTime(flight.arrival_datetime)
@@ -45,43 +47,58 @@ function FlightCardComponent({ flight, isBooked = false }: IFlightCard) {
 	const searchParams = useSearchParams()
 
 	const finalPrice = parseInt(flight.base_price, 10) + selectedBaggage.price
-	const createBookingUrl = () => {
-        // Создаем копию текущих параметров
-        const params = new URLSearchParams(searchParams.toString())
-        
-        // Добавляем/Обновляем параметр багажа
-        params.set('baggage', selectedBaggage.id)
-        
-        // Возвращаем итоговую ссылку
-        return `/flight/${flight.flight_id}?${params.toString()}`
-    }
 
-    const bookingUrl = createBookingUrl()
+	const createBookingUrl = () => {
+		const params = new URLSearchParams(searchParams.toString())
+		params.set('baggage', selectedBaggage.id)
+		return `/flight/${flight.flight_id}?${params.toString()}`
+	}
+
+	const bookingUrl = createBookingUrl()
+
+	// --- ЛОГИКА ИКОНКИ (ПОДЕЛИТЬСЯ) ---
+	const handleShare = (e: React.MouseEvent) => {
+		e.preventDefault() // Чтобы не сработал Link, если он есть рядом
+		e.stopPropagation()
+
+		// Формируем полную ссылку
+		const url = `${window.location.origin}/flight/${flight.flight_id}`
+
+		navigator.clipboard.writeText(url).then(() => {
+			toast.success('Ссылка на рейс скопирована!')
+			setIsCopied(true)
+			setTimeout(() => setIsCopied(false), 2000) // Возвращаем иконку через 2 сек
+		})
+	}
 
 	return (
 		<div className='relative flex flex-col items-center gap-4 rounded-xl border border-gray-100 bg-white p-4 shadow-sm md:flex-row'>
-			
-			<div className='absolute top-2 right-2'>
+			{/* --- ИКОНКА ПОДЕЛИТЬСЯ --- */}
+			<div className='absolute top-2 right-2 z-20'>
 				<Button
 					variant='ghost'
 					size='icon'
-					className='text-gray-400 hover:text-blue-500'
+					onClick={handleShare}
+					className='h-8 w-8 text-gray-400 hover:bg-blue-50 hover:text-blue-600'
 				>
-					<Upload className='h-5 w-5' />
+					{isCopied ? (
+						<Check className='h-4 w-4 text-green-500' />
+					) : (
+						<Upload className='h-4 w-4' />
+					)}
 				</Button>
 			</div>
 
-		
-			<div className='w-full md:w-5/12'>
+			{/* 1. ЛЕВАЯ ЧАСТЬ: Информация о рейсе */}
+			<div className='w-full md:w-[45%]'>
 				<div className='mb-3 flex items-center gap-2'>
 					{flight.logo_url ? (
-						
 						<Image
 							src={flight.logo_url}
 							alt={flight.airline_name}
-							width={24} 
+							width={24}
 							height={24}
-							className='rounded-full object-contain' 
+							className='rounded-full object-contain'
 						/>
 					) : (
 						<div className='h-[24px] w-[24px] rounded-full bg-gray-200'></div>
@@ -110,42 +127,64 @@ function FlightCardComponent({ flight, isBooked = false }: IFlightCard) {
 				</p>
 			</div>
 
-			
-			<div className="col-span-1 md:col-span-3 flex justify-center">
-        {!isBooked ? (
-            <BaggageSelector
-                options={baggageOptions}
-                selectedOption={selectedBaggage}
-                onSelect={setSelectedBaggage}
-            />
-        ) : (
-            <div className="text-sm text-gray-500 text-center">
-                Тариф: {selectedBaggage.name} <br/>
-                (Оплачено)
-            </div>
-        )}
-      </div>
+			{/* 2. ЦЕНТРАЛЬНАЯ ЧАСТЬ: Выбор багажа */}
+			<div className='flex w-full justify-center md:w-auto md:flex-1'>
+				{!isBooked ? (
+					<BaggageSelector
+						options={baggageOptions}
+						selectedOption={selectedBaggage}
+						onSelect={setSelectedBaggage}
+					/>
+				) : (
+					<div className='text-center text-sm text-gray-500'>
+						Тариф: {selectedBaggage.name} <br />
+						(Оплачено)
+					</div>
+				)}
+			</div>
 
-	
-			<div className="col-span-1 md:col-span-4 flex flex-col items-center sm:items-end justify-between h-full">
+			{/* 3. ПРАВАЯ ЧАСТЬ: Цена и Кнопка */}
+			{/* 
+                md:pt-6 — добавляет отступ сверху ТОЛЬКО на десктопе, 
+                чтобы цена не наезжала на иконку "Поделиться"
+            */}
+			<div className='flex w-full flex-row items-center justify-between gap-3 md:w-auto md:flex-col md:items-end md:justify-center md:pt-6'>
+				{/* Блок цены */}
+				<div className='text-left md:text-right'>
+					<p className='text-xl font-bold md:text-3xl'>
+						{finalPrice.toLocaleString('ru-RU')} ₽
+					</p>
+					{!isBooked && (
+						<p className='text-[10px] text-gray-500 md:text-xs'>
+							{selectedBaggage.name}
+						</p>
+					)}
+				</div>
 
-        
-        <div className="text-center sm:text-right my-2 sm:my-0">
-          <p className="text-3xl font-bold">{finalPrice.toLocaleString('ru-RU')} ₽</p>
-          {!isBooked && <p className="text-xs text-gray-500">{selectedBaggage.name}, за одного</p>}
-        </div>
-        {isBooked ? (
-            <Link href={`/booking/${flight.booking_id}`} className="w-full sm:w-auto">
-                <Button variant="outline" className="mt-2 w-full border-blue-600 text-blue-600 hover:bg-blue-50">
-                    Подробнее о заказе
-                </Button>
-            </Link>
-        ) : (
-            <Link href={bookingUrl} className="w-full sm:w-auto">
-                <Button className="mt-2 w-full">Выбрать</Button>
-            </Link>
-        )}
-      </div>
+				{/* Блок кнопки */}
+				{isBooked ? (
+					<Link
+						href={`/booking/${flight.booking_id}`}
+						className='w-auto md:w-full'
+					>
+						<Button
+							variant='outline'
+							className='w-full border-blue-600 text-blue-600 hover:bg-blue-50 '
+						>
+							Заказ
+						</Button>
+					</Link>
+				) : (
+					<Link
+						href={bookingUrl}
+						className='w-auto md:w-full'
+					>
+						<Button className='xs:text-sm xs:h-10 xs:px-4 h-8 w-full px-3 text-xs xs:w-auto  ' >
+							Забронировать
+						</Button>
+					</Link>
+				)}
+			</div>
 		</div>
 	)
 }

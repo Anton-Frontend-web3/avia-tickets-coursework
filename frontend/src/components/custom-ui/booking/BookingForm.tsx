@@ -25,11 +25,11 @@ interface Props {
 
 // Словарь для красивого отображения названия тарифа
 const BAGGAGE_LABELS: Record<string, string> = {
-	'no_baggage': 'Без багажа',
-	'baggage_10': 'Багаж 10 кг',
-	'baggage_20': 'Багаж 20 кг',
+	no_baggage: 'Без багажа',
+	baggage_10: 'Багаж 10 кг',
+	baggage_20: 'Багаж 20 кг',
 	// на случай если id отличаются
-	'checked_20kg': 'Багаж 20 кг' 
+	checked_20kg: 'Багаж 20 кг'
 }
 
 export function BookingForm({ flightId, initialCounts, baggageOption }: Props) {
@@ -100,7 +100,7 @@ export function BookingForm({ flightId, initialCounts, baggageOption }: Props) {
 	})
 
 	const { isSubmitting } = form.formState
-	
+
 	const onSubmit = useCallback(
 		async (values: BookingFormValues) => {
 			try {
@@ -119,7 +119,7 @@ export function BookingForm({ flightId, initialCounts, baggageOption }: Props) {
 					)
 					form.reset()
 					// Редирект в профиль или на страницу успеха
-					setTimeout(() => router.push('/profile'), 2000) 
+					setTimeout(() => router.push('/profile'), 2000)
 				} else {
 					toast.error(result.error ?? 'Неизвестная ошибка при бронировании')
 				}
@@ -128,7 +128,7 @@ export function BookingForm({ flightId, initialCounts, baggageOption }: Props) {
 				toast.error('Не удалось выполнить бронирование. Попробуйте позже.')
 			}
 		},
-		[form, router, baggageOption ]
+		[form, router, baggageOption]
 	)
 
 	return (
@@ -147,14 +147,14 @@ export function BookingForm({ flightId, initialCounts, baggageOption }: Props) {
 				))}
 
 				{/* Панель с кнопкой и информацией о тарифе */}
-				<div className='bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky bottom-4 z-10 rounded-xl border p-4 shadow-2xl backdrop-blur flex flex-col gap-3'>
-					
+				<div className='bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky bottom-4 z-10 flex flex-col gap-3 rounded-xl border p-4 shadow-2xl backdrop-blur'>
 					{/* Информационная плашка о выбранном багаже */}
-					<div className="flex items-center justify-between rounded-lg bg-blue-50 px-4 py-2 text-blue-900 border border-blue-100">
-						<div className="flex items-center gap-2">
-							<Briefcase className="h-4 w-4" />
-							<span className="text-sm font-medium">
-								Выбранный тариф: {BAGGAGE_LABELS[baggageOption] || 'Тариф не определен'}
+					<div className='flex items-center justify-between rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-blue-900'>
+						<div className='flex items-center gap-2'>
+							<Briefcase className='h-4 w-4' />
+							<span className='text-sm font-medium'>
+								Выбранный тариф:{' '}
+								{BAGGAGE_LABELS[baggageOption] || 'Тариф не определен'}
 							</span>
 						</div>
 					</div>

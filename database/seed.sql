@@ -6,13 +6,63 @@ INSERT INTO Airlines (name, iata_code, logo_url) VALUES
 ('Turkish Airlines', 'TK', 'https://raw.githubusercontent.com/Anton-Frontend-web3/AssetsImage/main/Turkish%20Airlines.png'),
 ('Emirates', 'EK', 'https://raw.githubusercontent.com/Anton-Frontend-web3/AssetsImage/main/emirates_logo.png');
 
--- Вставляем сразу с seat_map (JSON)
+
 INSERT INTO Aircraft_Models (model_name, capacity, seat_map) VALUES
-('Boeing 737-800', 189, '{ "rows": 30, "letters": ["A", "B", "C", "D", "E", "F"], "aisleAfter": ["C"] }'),
-('Airbus A320neo', 186, '{ "rows": 30, "letters": ["A", "B", "C", "D", "E", "F"], "aisleAfter": ["C"] }'),
-('Sukhoi Superjet 100', 98, '{ "rows": 20, "letters": ["A", "C", "D", "E", "F"], "aisleAfter": ["C"] }'),
-('Boeing 777-300ER', 428, '{ "rows": 50, "letters": ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K"], "aisleAfter": ["C", "G"] }'),
-('Airbus A380', 853, '{ "rows": 80, "letters": ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K"], "aisleAfter": ["C", "G"] }');
+(
+    'Boeing 737-800', 
+    186, 
+    '{
+        "rows": 31, 
+        "letters": ["A", "B", "C", "D", "E", "F"], 
+        "aisleAfter": ["C"],
+        "prices": { "A": 500, "F": 500 }, 
+        "rowPrices": { "1": 1500, "12": 1000, "13": 1000 }
+    }'
+),
+(
+    'Airbus A320neo', 
+    186, 
+    '{
+        "rows": 31, 
+        "letters": ["A", "B", "C", "D", "E", "F"], 
+        "aisleAfter": ["C"],
+        "prices": { "A": 450, "F": 450 }, 
+        "rowPrices": { "1": 2000, "12": 1200, "13": 1200 }
+    }'
+),
+(
+    'Sukhoi Superjet 100', 
+    100, 
+    '{
+        "rows": 20, 
+        "letters": ["A", "C", "D", "E", "F"], 
+        "aisleAfter": ["C"],
+        "prices": { "A": 300, "F": 300 }, 
+        "rowPrices": { "1": 1000 }
+    }'
+),
+(
+    'Boeing 777-300ER', 
+    400, 
+    '{
+        "rows": 40, 
+        "letters": ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K"], 
+        "aisleAfter": ["C", "G"],
+        "prices": { "A": 800, "K": 800, "D": 300, "G": 300 }, 
+        "rowPrices": { "1": 5000, "20": 2000 }
+    }'
+),
+(
+    'Airbus A380', 
+    850, 
+    '{
+        "rows": 85, 
+        "letters": ["A", "B", "C", "D", "E", "F", "G", "H", "J", "K"], 
+        "aisleAfter": ["C", "G"],
+        "prices": { "A": 1000, "K": 1000 }, 
+        "rowPrices": { "1": 7000 }
+    }'
+);
 
 INSERT INTO Airports (airport_name, city, country, iata_code) VALUES
 ('Пулково', 'Санкт-Петербург', 'Россия', 'LED'),
@@ -59,30 +109,32 @@ INSERT INTO Passengers (first_name, last_name, middle_name, document_number, bir
 ('Иван', 'Иванов', 'Иванович', '111111', '1990-05-20', 'male', 'passport_rf', '1111', 1),
 ('Петр', 'Петров', 'Петрович', '222222', '1985-11-10', 'male', 'passport_rf', '2222', NULL),
 ('Мария', 'Сидорова', 'Андреевна', '333333', '1992-03-15', 'female', 'passport_rf', '3333', NULL),
-('Елена', 'Кузнецова', NULL, '444444', '1988-07-30', 'female', 'passport_rf', '4444', NULL);
+('Елена', 'Василькова', NULL, '444444', '1988-07-30', 'female', 'passport_rf', '4444', NULL);
 
 -- Шаг 5: Бронирования
 
-INSERT INTO Bookings (flight_id, passenger_id, seat_number, status, ticket_number) 
+INSERT INTO Bookings (flight_id, passenger_id, seat_number, status, ticket_number, booking_reference) 
 VALUES (
     (SELECT flight_id FROM Flights WHERE schedule_id = 1 ORDER BY departure_datetime LIMIT 1), 
-    1, '12A', 'Confirmed', 'SU-QWERTY'
+    1, '12A', 'Confirmed', 'SU-QWERTY', 'PNR-001'
 );
 
-INSERT INTO Bookings (flight_id, passenger_id, seat_number, status, ticket_number) 
+-- Петров и Сидорова (Групповое бронирование - PNR одинаковый)
+INSERT INTO Bookings (flight_id, passenger_id, seat_number, status, ticket_number, booking_reference) 
 VALUES (
     (SELECT flight_id FROM Flights WHERE schedule_id = 4 ORDER BY departure_datetime LIMIT 1), 
-    2, '24C', 'Confirmed', 'S7-ASDFGH'
+    2, '24C', 'Confirmed', 'S7-ASDFGH', 'PNR-GROUP'
 );
 
-INSERT INTO Bookings (flight_id, passenger_id, seat_number, status, ticket_number) 
+INSERT INTO Bookings (flight_id, passenger_id, seat_number, status, ticket_number, booking_reference) 
 VALUES (
     (SELECT flight_id FROM Flights WHERE schedule_id = 4 ORDER BY departure_datetime LIMIT 1), 
-    3, '24B', 'Confirmed', 'S7-ZXCVBN'
+    3, '24B', 'Confirmed', 'S7-ZXCVBN', 'PNR-GROUP'
 );
 
-INSERT INTO Bookings (flight_id, passenger_id, seat_number, status, ticket_number) 
+-- Кузнецова (Одиночное)
+INSERT INTO Bookings (flight_id, passenger_id, seat_number, status, ticket_number, booking_reference) 
 VALUES (
     (SELECT flight_id FROM Flights WHERE schedule_id = 8 ORDER BY departure_datetime LIMIT 1), 
-    4, '15F', 'Confirmed', 'DP-STAVROP'
+    4, '15F', 'Confirmed', 'DP-STAVROP', 'PNR-003'
 );

@@ -16,9 +16,9 @@ export async function middleware(req: NextRequest) {
 	if (!token) {
 		// Если путь НЕ публичный (например, /, /search, /profile) -> на выход
 		if (!isPublicPath) {
-            // Можно добавить ?callbackUrl=..., чтобы вернуть пользователя обратно после входа
-            const url = new URL('/login', req.url);
-            url.searchParams.set('callbackUrl', pathname); 
+			// Можно добавить ?callbackUrl=..., чтобы вернуть пользователя обратно после входа
+			const url = new URL('/login', req.url)
+			url.searchParams.set('callbackUrl', pathname)
 			return NextResponse.redirect(url)
 		}
 		// Если путь публичный (логин/регистрация) -> пускаем
@@ -33,8 +33,8 @@ export async function middleware(req: NextRequest) {
 				return NextResponse.redirect(new URL('/admin/dashboard', req.url))
 			if (token.role === 'agent')
 				return NextResponse.redirect(new URL('/agent/check-in', req.url))
-			
-            // Клиента перекидываем в профиль (или на поиск, если хотите)
+
+			// Клиента перекидываем в профиль (или на поиск, если хотите)
 			return NextResponse.redirect(new URL('/profile', req.url))
 		}
 

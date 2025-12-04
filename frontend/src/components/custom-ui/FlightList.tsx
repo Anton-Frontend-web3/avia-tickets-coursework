@@ -11,7 +11,11 @@ interface FlightListProps {
 	isBooked?: boolean
 }
 
-function FlightListComponent({ flights, isLoading,isBooked = false }: FlightListProps) {
+function FlightListComponent({
+	flights,
+	isLoading,
+	isBooked = false
+}: FlightListProps) {
 	if (isLoading) {
 		return (
 			<div className='flex flex-col gap-4'>
