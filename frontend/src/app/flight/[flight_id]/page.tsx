@@ -29,10 +29,10 @@ export default async function FlightDetailPage({
 	}
 
 	return (
-		<div className=''>
+		<div>
 			<h1 className='mb-4 text-3xl font-bold'>Детали перелёта</h1>
 
-			<div className='rounded-lg bg-white p-6 shadow-md'>
+			<div className='p-6'>
 				<p className='text-xl'>
 					<strong>{flight.airline_name}</strong> - Рейс {flight.flight_number}
 				</p>
@@ -53,14 +53,11 @@ export default async function FlightDetailPage({
 
 			<div className='mt-8'>
 				<h2 className='mb-4 text-2xl font-bold'>Оформление бронирования</h2>
-				<div className='rounded-lg bg-white p-6'>
-					{/* 4. Передаем initialCounts в форму */}
-					<BookingForm
-						flightId={flight.flight_id}
-						initialCounts={initialCounts}
-						baggageOption={baggageOption}
-					/>
-				</div>
+				<BookingForm
+					flightId={flight.flight_id}
+					initialCounts={initialCounts}
+					baggageOption={baggageOption}
+				/>
 			</div>
 		</div>
 	)

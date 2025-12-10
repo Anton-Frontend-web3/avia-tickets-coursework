@@ -2,13 +2,13 @@ import { getServerSession } from 'next-auth/next'
 import { authOptions } from '@/app/api/auth/[...nextauth]/route'
 import { redirect } from 'next/navigation'
 import { getBookingsByUserId } from '@/lib/data'
-import { FlightList } from '@/components/custom-ui/FlightList'
+import { FlightList } from '@/components/custom-ui/flights/FlightList'
 import { IFlight } from '../search/page'
 
 export default async function ProfilePage() {
 	const session = await getServerSession(authOptions)
 
-	if (!session || !session.user) {
+	if (!session || !session.user || !session.user.id) {
 		redirect('/login')
 	}
 

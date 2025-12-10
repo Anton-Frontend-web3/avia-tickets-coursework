@@ -1,4 +1,4 @@
-import { ScheduleForm } from '@/components/custom-ui/ScheduleForm'
+import { ScheduleForm } from '@/components/custom-ui/admin/ScheduleForm'
 import { getAirportsForSelect } from '@/lib/data'
 
 // 1. Делаем компонент страницы АСИНХРОННЫМ

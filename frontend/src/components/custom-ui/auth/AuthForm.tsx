@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input'
 // Схему zod оставляем без изменений, она идеальна
 const formSchema = z.object({
 	email: z.email({ message: 'Пожалуйста, введите корректный email.' }),
-	password: z.string().min(1, { message: 'Пожалуйста, введите пароль.' }) // Убрал min(8) для удобства теста
+	password: z.string().min(8, { message: 'Пожалуйста, введите пароль.' }) // Убрал min(8) для удобства теста
 })
 
 // 1. Изменяем тип экшена

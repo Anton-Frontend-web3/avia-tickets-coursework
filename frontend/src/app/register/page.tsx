@@ -5,13 +5,13 @@ import { useRouter } from 'next/navigation'
 import { toast } from 'sonner'
 import { z } from 'zod'
 
-import { AuthForm } from '@/components/custom-ui/AuthForm'
+import { AuthForm } from '@/components/custom-ui/auth/AuthForm'
 import { registerUser } from '@/lib/actions'
 
 // Тип для данных формы
 const formSchema = z.object({
 	email: z.email(),
-	password: z.string()
+	password: z.string().min(8)
 })
 
 export default function RegisterPage() {

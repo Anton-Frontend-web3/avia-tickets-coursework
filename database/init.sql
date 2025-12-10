@@ -1,4 +1,6 @@
-DROP TABLE IF EXISTS seat_reservations, Bookings, Passengers, Flights, Schedules, Aircrafts, Aircraft_Models, Airlines, Airports, Users CASCADE;
+DROP TABLE IF EXISTS seat_reservations, password_resets, Bookings, Passengers, Flights, Schedules, Aircrafts, Aircraft_Models, Airlines, Airports, Users CASCADE;
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 -- 2. Справочники и Пользователи
 CREATE TABLE Airlines (
@@ -12,8 +14,7 @@ CREATE TABLE Aircraft_Models (
     model_id SERIAL PRIMARY KEY,
     model_name VARCHAR(255) UNIQUE NOT NULL,
     capacity INT NOT NULL,
-    -- ДОБАВИЛИ КОЛОНКУ СРАЗУ ЗДЕСЬ
-    seat_map JSONB 
+    seat_map JSONB
 );
 
 CREATE TABLE Airports (
@@ -21,7 +22,9 @@ CREATE TABLE Airports (
     airport_name VARCHAR(255) NOT NULL,
     city VARCHAR(255) NOT NULL,
     country VARCHAR(255) NOT NULL,
-    iata_code VARCHAR(3) UNIQUE NOT NULL
+    iata_code VARCHAR(3) UNIQUE NOT NULL,
+    -- НОВОЕ: Таймзона аэропорта (например, 'Europe/Moscow')
+    time_zone VARCHAR(100) NOT NULL DEFAULT 'UTC'
 );
 
 CREATE TABLE Users (
@@ -30,6 +33,14 @@ CREATE TABLE Users (
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(50) NOT NULL CHECK (role IN ('client', 'agent', 'admin'))
 );
+
+CREATE TABLE password_resets (
+    id SERIAL PRIMARY KEY,
+    email VARCHAR(255) NOT NULL,
+    token VARCHAR(255) NOT NULL UNIQUE,
+    expires_at TIMESTAMP NOT NULL
+);
+CREATE INDEX idx_password_resets_token ON password_resets(token);
 
 -- 3. Самолеты и Расписания
 CREATE TABLE Aircrafts (
@@ -44,8 +55,10 @@ CREATE TABLE Schedules (
     flight_number VARCHAR(10) NOT NULL,
     departure_airport_id INT NOT NULL REFERENCES Airports(airport_id),
     arrival_airport_id INT NOT NULL REFERENCES Airports(airport_id),
-    departure_time TIME NOT NULL,
-    arrival_time TIME NOT NULL,
+    departure_time TIME NOT NULL,  -- Местное время вылета
+    arrival_time TIME NOT NULL,    -- Местное время прилета
+    -- НОВОЕ: Сдвиг дней (0 = тот же день, 1 = следующий день)
+    arrival_day_offset SMALLINT NOT NULL DEFAULT 0,
     days_of_week INT[] NOT NULL
 );
 
@@ -54,6 +67,7 @@ CREATE TABLE Flights (
     flight_id SERIAL PRIMARY KEY,
     schedule_id INT NOT NULL REFERENCES Schedules(schedule_id),
     aircraft_id INT NOT NULL REFERENCES Aircrafts(aircraft_id),
+    -- ВАЖНО: Храним в UTC (как и раньше, но теперь генерируем правильно)
     departure_datetime TIMESTAMP WITH TIME ZONE NOT NULL,
     arrival_datetime TIMESTAMP WITH TIME ZONE NOT NULL,
     status VARCHAR(50) NOT NULL CHECK (status IN ('On Time', 'Delayed', 'Cancelled', 'Departed', 'Arrived')),
@@ -70,10 +84,9 @@ CREATE TABLE Passengers (
     valid_until DATE,
     gender VARCHAR(10),
     document_type VARCHAR(50),
-    document_series VARCHAR(50), 
-    document_number VARCHAR(255) NOT NULL, 
+    document_series VARCHAR(50),
+    document_number VARCHAR(255) NOT NULL,
     user_id INT REFERENCES Users(user_id),
-    
     CONSTRAINT unique_passenger_document UNIQUE (document_type, document_number)
 );
 
@@ -89,15 +102,10 @@ CREATE TABLE Bookings (
     check_in_status VARCHAR(50) NOT NULL DEFAULT 'Pending' CHECK (check_in_status IN ('Pending', 'Checked-in', 'No-show')),
     baggage_option VARCHAR(50) NOT NULL DEFAULT 'no_baggage',
     ticket_number VARCHAR(20) UNIQUE NOT NULL,
-    
-    -- Уникальность места в рамках подтвержденной брони
-    -- (Чтобы нельзя было купить уже купленное место)
-    CONSTRAINT unique_flight_seat_booking UNIQUE (flight_id, seat_number) 
-    -- Примечание: это ограничение сработает только если seat_number не NULL.
-    -- Если вы позволяете покупать без места, это ок.
+    CONSTRAINT unique_flight_seat_booking UNIQUE (flight_id, seat_number)
 );
 
--- 7. Временные резервы (ДОБАВИЛИ В КОНЕЦ)
+-- 7. Временные резервы
 CREATE TABLE seat_reservations (
     id SERIAL PRIMARY KEY,
     flight_id INT NOT NULL REFERENCES Flights(flight_id) ON DELETE CASCADE,
@@ -105,7 +113,6 @@ CREATE TABLE seat_reservations (
     user_id INT NOT NULL REFERENCES Users(user_id) ON DELETE CASCADE,
     created_at TIMESTAMP DEFAULT NOW(),
     expires_at TIMESTAMP DEFAULT NOW() + INTERVAL '10 minutes',
-    
     CONSTRAINT unique_flight_seat_hold UNIQUE(flight_id, seat_number)
 );
 
@@ -115,31 +122,45 @@ CREATE INDEX idx_airports_city ON Airports(city);
 CREATE INDEX idx_reservations_flight ON seat_reservations(flight_id);
 CREATE INDEX idx_reservations_expires ON seat_reservations(expires_at);
 CREATE INDEX idx_bookings_reference ON Bookings(booking_reference);
+CREATE INDEX trgm_idx_users_email ON Users USING gin (email gin_trgm_ops);
 
--- 9. Триггер генерации рейсов
+-- 9. УМНЫЙ ТРИГГЕР ГЕНЕРАЦИИ (С учетом таймзон)
 CREATE OR REPLACE FUNCTION generate_flights_for_schedule()
 RETURNS TRIGGER AS $$
 DECLARE
     i INT;
     flight_date DATE;
     day_of_week INT;
+    dep_tz VARCHAR(100);
+    arr_tz VARCHAR(100);
+    local_dep_ts TIMESTAMP WITHOUT TIME ZONE;
+    local_arr_ts TIMESTAMP WITHOUT TIME ZONE;
 BEGIN
-    RAISE NOTICE 'Triggered for new schedule_id: %', NEW.schedule_id;
+    -- Получаем таймзоны аэропортов вылета и прилета
+    SELECT time_zone INTO dep_tz FROM Airports WHERE airport_id = NEW.departure_airport_id;
+    SELECT time_zone INTO arr_tz FROM Airports WHERE airport_id = NEW.arrival_airport_id;
 
+    -- Генерируем на 30 дней вперед
     FOR i IN 0..29 LOOP
         flight_date := CURRENT_DATE + i;
         day_of_week := EXTRACT(ISODOW FROM flight_date);
         
         IF day_of_week = ANY(NEW.days_of_week) THEN
+            -- 1. Формируем "абстрактное" местное время (Дата + Время из расписания)
+            local_dep_ts := flight_date + NEW.departure_time;
+            
+            -- Для прилета учитываем сдвиг дней (offset)
+            local_arr_ts := flight_date + NEW.arrival_time + (NEW.arrival_day_offset || ' days')::INTERVAL;
+
+            -- 2. Конвертируем в UTC, зная местную таймзону
+            -- AT TIME ZONE 'Zone' превращает локальное время в UTC timestamp with time zone
+            
             INSERT INTO flights (schedule_id, aircraft_id, departure_datetime, arrival_datetime, status, base_price)
             VALUES (
                 NEW.schedule_id,
                 (SELECT aircraft_id FROM aircrafts ORDER BY RANDOM() LIMIT 1),
-                flight_date + NEW.departure_time,
-                CASE 
-                    WHEN NEW.arrival_time < NEW.departure_time THEN flight_date + NEW.arrival_time + INTERVAL '1 day'
-                    ELSE flight_date + NEW.arrival_time
-                END,
+                local_dep_ts AT TIME ZONE dep_tz, -- Запишется как UTC
+                local_arr_ts AT TIME ZONE arr_tz, -- Запишется как UTC
                 'On Time',
                 floor(random() * (25000 - 3000 + 1) + 3000)
             );

@@ -46,6 +46,7 @@ export const singlePassengerSchema = z
 		),
 		documentSeries: z
 			.string()
+			.min(1, { message: 'Введите серию документа.' })
 			.max(10, { message: 'Серия слишком длинная (макс. 10 символов).' })
 			.optional(),
 		documentNumber: z
@@ -179,11 +180,11 @@ export const singlePassengerSchema = z
 					})
 				}
 			}
-			// Номер загранпаспорта старого образца (9 цифр) или нового (9 цифр), серия (2 цифры)
-			if (!/^\d{9}$/.test(data.documentNumber)) {
+
+			if (!/^\d{7}$/.test(data.documentNumber)) {
 				ctx.addIssue({
 					code: 'custom',
-					message: 'Номер загранпаспорта: ровно 9 цифр.',
+					message: 'Номер загранпаспорта: ровно 7 цифр.',
 					path: ['documentNumber']
 				})
 			}

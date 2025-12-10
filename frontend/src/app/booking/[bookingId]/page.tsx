@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowLeft, Plane, User, CreditCard } from 'lucide-react' // Calendar убрал, он не используется
+import { ArrowLeft, Plane, User, CreditCard, ArrowDown } from 'lucide-react'
 
 import { getBookingDetails } from '@/lib/data'
 import { formatTime, formatDateWithDay } from '@/lib/utils'
@@ -13,10 +13,8 @@ import {
 	CardDescription,
 	CardFooter
 } from '@/components/ui/card'
-import { Separator } from '@/components/ui/separator'
-import { CancelBookingButton } from '@/components/custom-ui/CancelBookingButton'
+import { CancelBookingButton } from '@/components/custom-ui/booking/CancelBookingButton'
 
-// Словарь для перевода типов документов
 const DOC_TYPE_LABELS: Record<string, string> = {
 	passport_rf: 'Паспорт РФ',
 	passport_international: 'Загранпаспорт',
@@ -38,8 +36,8 @@ export default async function BookingDetailsPage({ params }: PageProps) {
 	const isConfirmed = booking.status === 'Confirmed'
 
 	const statusClasses = isConfirmed
-		? 'bg-green-50 text-green-700 border-green-200'
-		: 'bg-red-50 text-red-700 border-red-200'
+		? 'bg-green-100 text-green-700 border-green-200 dark:bg-green-900/30 dark:text-green-400 dark:border-green-800'
+		: 'bg-red-100 text-red-700 border-red-200 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800'
 
 	const statusLabel = isConfirmed
 		? 'Оплачено и подтверждено'
@@ -50,21 +48,19 @@ export default async function BookingDetailsPage({ params }: PageProps) {
 	const arrivalDate = formatDateWithDay(booking.arrival_datetime.toString())
 	const arrivalTime = formatTime(booking.arrival_datetime.toString())
 
-	// Формируем красивое название документа
 	const documentLabel = DOC_TYPE_LABELS[booking.document_type] || 'Документ'
 
-	// Формируем строку "Серия Номер" (если серии нет, то просто номер)
 	const fullDocumentNumber = booking.document_series
 		? `${booking.document_series} ${booking.document_number}`
 		: booking.document_number
 
 	return (
-		<div className='container mx-auto max-w-3xl px-4 py-10'>
+		<div className='container mx-auto max-w-3xl px-3 py-6 md:px-4 md:py-10'>
 			<div className='mb-6'>
 				<Link href='/profile'>
 					<Button
 						variant='ghost'
-						className='pl-0 hover:bg-transparent hover:text-blue-600'
+						className='hover:text-primary pl-0 hover:bg-transparent'
 					>
 						<ArrowLeft className='mr-2 h-4 w-4' />
 						Вернуться в личный кабинет
@@ -72,70 +68,79 @@ export default async function BookingDetailsPage({ params }: PageProps) {
 				</Link>
 			</div>
 
-			<Card className='overflow-hidden border-gray-200 shadow-md'>
-				<CardHeader className='border-b bg-gray-50/50 pb-4'>
-						<div className="flex flex-col gap-2">
-                            <div>
-                                <CardDescription className='mb-1 text-xs uppercase tracking-wider'>Код бронирования (PNR)</CardDescription>
-                                <CardTitle className='font-mono text-3xl font-black tracking-widest text-blue-700'>
-                                    {booking.booking_reference}
-                                </CardTitle>
-                            </div>
-                            <div>
-                                <CardDescription className='mb-1 text-xs'>Номер билета</CardDescription>
-                                <p className='font-mono text-sm font-medium text-gray-600'>
-                                    {booking.ticket_number}
-                                </p>
-                            </div>
-                        </div>
+			<Card className='border-border bg-card text-card-foreground overflow-hidden shadow-md'>
+				<CardHeader className='border-border border-b pb-4'>
+					<div className='flex flex-col gap-2'>
+						<div>
+							<CardDescription className='text-muted-foreground mb-1 text-xs tracking-wider uppercase'>
+								Код бронирования (PNR)
+							</CardDescription>
+
+							<CardTitle className='text-primary font-mono text-3xl font-black tracking-widest'>
+								{booking.booking_reference}
+							</CardTitle>
+						</div>
+						<div>
+							<CardDescription className='text-muted-foreground mb-1 text-xs'>
+								Номер билета
+							</CardDescription>
+							<p className='text-foreground font-mono text-sm font-medium'>
+								{booking.ticket_number}
+							</p>
+						</div>
+					</div>
 				</CardHeader>
 
 				<CardContent className='space-y-8 pt-6'>
-					{/* Информация о рейсе */}
 					<section>
-						<div className='mb-4 flex items-center gap-2 text-gray-800'>
-							<Plane className='h-5 w-5 text-blue-500' />
+						<div className='text-foreground mb-4 flex items-center gap-2'>
+							<Plane className='text-primary h-5 w-5' />
 							<h3 className='text-lg font-semibold'>Информация о рейсе</h3>
 						</div>
 
-						<div className='space-y-4 rounded-lg border border-gray-100 bg-white p-4'>
-							<div className='flex items-center justify-between'>
-								<span className='font-medium text-gray-900'>
+						<div className='border-border bg-muted/20 space-y-4 rounded-lg border p-4'>
+							<div className='flex flex-col justify-between gap-1 sm:flex-row sm:items-center'>
+								<span className='text-foreground font-medium'>
 									{booking.airline_name}
 								</span>
-								<span className='text-sm text-gray-500'>
+								<span className='text-muted-foreground text-sm'>
 									Рейс {booking.flight_number}
 								</span>
 							</div>
 
-							<div className='flex items-center justify-between gap-4'>
-								<div className='text-left'>
-									<p className='text-3xl font-bold text-gray-900'>
+							<div className='flex flex-col gap-6 md:flex-row md:items-center md:justify-between md:gap-4'>
+								{/* Вылет */}
+								<div className='text-center md:text-left'>
+									<p className='text-foreground text-2xl font-bold md:text-3xl'>
 										{departureTime}
 									</p>
-									<p className='text-sm font-medium text-gray-600'>
+									<p className='text-muted-foreground text-sm font-medium'>
 										{departureDate}
 									</p>
-									<p className='mt-1 text-xs text-gray-400'>
+									<p className='text-muted-foreground/70 mt-1 text-xs'>
 										{booking.departure_city} ({booking.departure_code})
 									</p>
 								</div>
 
-								<div className='flex flex-1 flex-col items-center px-2'>
-									<div className='relative mt-2 h-[2px] w-full bg-gray-200'>
-										<div className='absolute top-1/2 right-0 h-2 w-2 -translate-y-1/2 rounded-full bg-gray-300'></div>
-										<div className='absolute top-1/2 left-0 h-2 w-2 -translate-y-1/2 rounded-full bg-gray-300'></div>
+								<div className='flex flex-1 items-center justify-center px-2'>
+									<ArrowDown className='text-muted-foreground/50 h-5 w-5 md:hidden' />
+
+									<div className='hidden w-full md:block'>
+										<div className='bg-border relative mt-2 h-[2px] w-full'>
+											<div className='bg-primary/50 absolute top-1/2 right-0 h-2 w-2 -translate-y-1/2 rounded-full'></div>
+											<div className='bg-primary/50 absolute top-1/2 left-0 h-2 w-2 -translate-y-1/2 rounded-full'></div>
+										</div>
 									</div>
 								</div>
 
-								<div className='text-right'>
-									<p className='text-3xl font-bold text-gray-900'>
+								<div className='text-center md:text-right'>
+									<p className='text-foreground text-2xl font-bold md:text-3xl'>
 										{arrivalTime}
 									</p>
-									<p className='text-sm font-medium text-gray-600'>
+									<p className='text-muted-foreground text-sm font-medium'>
 										{arrivalDate}
 									</p>
-									<p className='mt-1 text-xs text-gray-400'>
+									<p className='text-muted-foreground/70 mt-1 text-xs'>
 										{booking.arrival_city} ({booking.arrival_code})
 									</p>
 								</div>
@@ -143,54 +148,48 @@ export default async function BookingDetailsPage({ params }: PageProps) {
 						</div>
 					</section>
 
-					<Separator />
-
-					{/* Пассажир - ИЗМЕНЕНИЯ ЗДЕСЬ */}
 					<section>
-						<div className='mb-4 flex items-center gap-2 text-gray-800'>
-							<User className='h-5 w-5 text-blue-500' />
+						<div className='text-foreground mb-4 flex items-center gap-2'>
+							<User className='text-primary h-5 w-5' />
 							<h3 className='text-lg font-semibold'>Пассажир</h3>
 						</div>
 
-						<div className='grid grid-cols-1 gap-6 rounded-lg bg-gray-50/50 p-4 sm:grid-cols-2'>
+						<div className='border-border bg-muted/20 grid grid-cols-1 gap-6 rounded-lg border p-4 sm:grid-cols-2'>
 							<div>
-								<p className='mb-1 text-xs text-gray-500'>
+								<p className='text-muted-foreground mb-1 text-xs'>
 									Фамилия Имя Отчество
 								</p>
-								<p className='font-medium text-gray-900'>
+								<p className='text-foreground font-medium'>
 									{booking.last_name} {booking.first_name} {booking.middle_name}
 								</p>
 							</div>
 							<div>
-								{/* Выводим тип документа (Паспорт РФ) */}
-								<p className='mb-1 text-xs text-gray-500'>{documentLabel}</p>
-								{/* Выводим Серию и Номер */}
-								<p className='font-medium text-gray-900'>
+								<p className='text-muted-foreground mb-1 text-xs'>
+									{documentLabel}
+								</p>
+								<p className='text-foreground font-medium'>
 									{fullDocumentNumber}
 								</p>
 							</div>
 						</div>
 					</section>
 
-					<Separator />
-
-					{/* Оплата и Багаж */}
 					<section>
-						<div className='mb-4 flex items-center gap-2 text-gray-800'>
-							<CreditCard className='h-5 w-5 text-blue-500' />
+						<div className='text-foreground mb-4 flex items-center gap-2'>
+							<CreditCard className='text-primary h-5 w-5' />
 							<h3 className='text-lg font-semibold'>Оплата и услуги</h3>
 						</div>
 						<div className='flex flex-col gap-3'>
-							<div className='flex items-center justify-between rounded-lg border p-4'>
-								<span className='text-gray-600'>Стоимость билета</span>
-								<span className='text-xl font-bold text-gray-900'>
+							<div className='border-border bg-card flex items-center justify-between rounded-lg border p-4'>
+								<span className='text-muted-foreground'>Стоимость билета</span>
+								<span className='text-foreground text-xl font-bold'>
 									{parseInt(booking.base_price).toLocaleString('ru-RU')} ₽
 								</span>
 							</div>
 
-							<div className='flex items-center justify-between rounded-lg border bg-blue-50/50 p-4'>
-								<span className='text-gray-600'>Багаж</span>
-								<span className='font-medium text-blue-900'>
+							<div className='border-primary/20 bg-primary/5 flex items-center justify-between rounded-lg border p-4'>
+								<span className='text-muted-foreground'>Багаж</span>
+								<span className='text-primary font-medium'>
 									{booking.baggage_option === 'no_baggage'
 										? 'Без багажа'
 										: booking.baggage_option === 'baggage_10'
@@ -201,9 +200,23 @@ export default async function BookingDetailsPage({ params }: PageProps) {
 						</div>
 					</section>
 				</CardContent>
-				{isConfirmed && (
-					<CardFooter className='flex justify-end border-t bg-gray-50 p-6'>
+
+				{isConfirmed ? (
+					<CardFooter className='border-border bg-muted/40 flex flex-col items-center gap-4 border-t p-6 sm:flex-row sm:justify-between'>
+						<div
+							className={`w-full rounded-full border px-4 py-1.5 text-center text-sm font-medium sm:w-fit ${statusClasses}`}
+						>
+							{statusLabel}
+						</div>
 						<CancelBookingButton bookingId={booking.booking_id} />
+					</CardFooter>
+				) : (
+					<CardFooter className='border-border bg-muted/40 flex justify-start border-t p-6'>
+						<div
+							className={`w-fit rounded-full border px-4 py-1.5 text-sm font-medium ${statusClasses}`}
+						>
+							{statusLabel}
+						</div>
 					</CardFooter>
 				)}
 			</Card>

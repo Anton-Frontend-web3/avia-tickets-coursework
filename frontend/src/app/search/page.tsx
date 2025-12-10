@@ -1,87 +1,49 @@
-'use client'
+import InputQueryForm from '@/components/custom-ui/search/InputQueryForm'
+import { FlightList } from '@/components/custom-ui/flights/FlightList'
+import { getFlights } from '@/lib/data'
 
-import { useSearchParams } from 'next/navigation'
-import { useEffect, useState } from 'react'
-
-import InputQueryForm from '@/components/custom-ui/InputQueryForm'
-// Давайте предположим, что у вас будут эти компоненты
-import { FlightList } from '@/components/custom-ui/FlightList'
-import { SkeletonLoader } from '@/components/custom-ui/SkeletonLoader'
-
-// Определяем тип для наших рейсов. TypeScript будет нам помогать.
+// 1. Оставляем интерфейс экспортируемым, чтобы data.ts мог его использовать
 export interface IFlight {
 	logo_url?: string | null
 	flight_id: number
 	flight_number: string
 	departure_city: string
 	arrival_city: string
-	departure_datetime: string
+	departure_datetime: string // или Date, зависит от того, что возвращает драйвер PG
 	arrival_datetime: string
 	base_price: string
 	airline_name: string
 	ticket_number?: string
+	departure_timezone: string; 
+    arrival_timezone: string;
+	departure_airport_name: string;
+    arrival_airport_name: string;
+	departure_code:string;
+	arrival_code:string
 }
 
-export default function SearchPage() {
-	const [flights, setFlights] = useState<IFlight[]>([])
-	const [isLoading, setIsLoading] = useState(true)
-	const [error, setError] = useState<string | null>(null)
+interface SearchPageProps {
+	searchParams: Promise<{
+		from?: string
+		to?: string
+		date?: string
+		returnDate?: string
+	}>
+}
 
-	const searchParams = useSearchParams()
+export default async function SearchPage({ searchParams }: SearchPageProps) {
+	const params = await searchParams
+	const { from, to, date, returnDate } = params
 
-	useEffect(() => {
-		const from = searchParams.get('from')
-		const to = searchParams.get('to')
-		const date = searchParams.get('date')
+	// 2. ИСПРАВЛЕНИЕ: Явно указываем тип массива
+	let flights: IFlight[] = []
 
-		if (from && to && date) {
-			const fetchFlights = async () => {
-				try {
-					setIsLoading(true)
-					setError(null)
-
-					const queryParams = new URLSearchParams({ from, to, date })
-					const response = await fetch(
-						`/api/flights/search?${queryParams.toString()}`
-					)
-
-					if (!response.ok) {
-						throw new Error('Не удалось загрузить рейсы. Попробуйте позже.')
-					}
-
-					const data: IFlight[] = await response.json()
-					setFlights(data)
-				} catch (err: unknown) {
-					if (err instanceof Error) {
-						setError(err.message)
-					} else {
-						setError('Произошла неизвестная ошибка.')
-					}
-				} finally {
-					setIsLoading(false)
-				}
-			}
-
-			fetchFlights()
-		} else {
-			setIsLoading(false)
+	if (from && to && date) {
+		try {
+			flights = await getFlights(from, to, date, returnDate)
+		} catch (error) {
+			console.error('Ошибка при получении рейсов:', error)
 		}
-	}, [searchParams])
-
-	const renderContent = () => {
-		if (isLoading) {
-			return <p>Загрузка...</p> // return <SkeletonLoader />;
-		}
-
-		if (error) {
-			return <p className='text-red-500'>Ошибка: {error}</p>
-		}
-		return (
-			<FlightList
-				flights={flights}
-				isLoading={isLoading}
-			/>
-		)
 	}
 
 	return (
@@ -89,8 +51,13 @@ export default function SearchPage() {
 			<div className='mb-8'>
 				<InputQueryForm />
 			</div>
+
 			<h2 className='mb-4 text-2xl font-bold'>Найденные рейсы</h2>
-			{renderContent()}
+
+			<FlightList
+				flights={flights}
+				isLoading={false}
+			/>
 		</>
 	)
 }

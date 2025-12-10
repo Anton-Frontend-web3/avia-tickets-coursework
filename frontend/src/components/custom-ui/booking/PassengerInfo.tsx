@@ -1,6 +1,6 @@
 'use client'
 
-import { Control, useWatch } from 'react-hook-form'
+import { Control, useWatch, useFormContext } from 'react-hook-form' // <--- 1. Импортируем useFormContext
 import {
 	FormControl,
 	FormField,
@@ -15,11 +15,13 @@ import { BookingFormValues } from '@/shared/schemas/booking.schema'
 
 interface Props {
 	control: Control<BookingFormValues>
-	index: number // Индекс пассажира в массиве
+	index: number
 }
 
 export function PassengerInfo({ control, index }: Props) {
-	// Следим за чекбоксом КОНКРЕТНОГО пассажира по индексу
+	// 2. Достаем setValue из контекста формы
+	const { setValue } = useFormContext<BookingFormValues>()
+
 	const hasNoMiddleName = useWatch({
 		control,
 		name: `passengers.${index}.hasNoMiddleName`
@@ -76,6 +78,8 @@ export function PassengerInfo({ control, index }: Props) {
 									placeholder='Иванович'
 									{...field}
 									disabled={hasNoMiddleName}
+									// Важно: если значение null/undefined, ставим пустую строку, чтобы React не ругался
+									value={field.value || ''}
 								/>
 							</FormControl>
 							<FormMessage className='absolute top-full left-0 mt-1 text-xs' />
@@ -90,10 +94,21 @@ export function PassengerInfo({ control, index }: Props) {
 							<FormControl>
 								<Switch
 									checked={field.value}
-									onCheckedChange={field.onChange}
+									onCheckedChange={checked => {
+										// 3. Обновляем сам свитч
+										field.onChange(checked)
+
+										// 4. Если свитч ВКЛЮЧЕН (checked === true), очищаем отчество
+										if (checked) {
+											setValue(`passengers.${index}.middleName`, '', {
+												shouldValidate: true, // Убираем ошибки валидации, если они были
+												shouldDirty: true
+											})
+										}
+									}}
 								/>
 							</FormControl>
-							<FormLabel className='!mt-0 text-sm text-gray-600'>
+							<FormLabel className='text-muted-foreground !mt-0 text-sm'>
 								Нет отчества
 							</FormLabel>
 						</FormItem>

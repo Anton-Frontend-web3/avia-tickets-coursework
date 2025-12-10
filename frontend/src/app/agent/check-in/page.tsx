@@ -1,5 +1,5 @@
 'use client'
-import PassengerList from '@/components/custom-ui/ListPassengers'
+import PassengerList from '@/components/custom-ui/chech-inAgent/ListPassengers'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { IPassengerCheck } from '@/shared/types/pessenger.type'

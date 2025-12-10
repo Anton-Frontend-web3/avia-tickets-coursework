@@ -58,11 +58,8 @@ export function PassengerDocs({ index }: Props) {
 	const lettersPart = seriesParts.length > 1 ? seriesParts[1] : ''
 
 	return (
-		<div className='mt-6 grid grid-cols-1 gap-6 border-t border-gray-100 pt-6 sm:grid-cols-2'>
-			{/* --- ВЫБОР ТИПА ДОКУМЕНТА --- */}
+		<div className='mt-6 grid grid-cols-1 gap-6 pt-6 sm:grid-cols-2'>
 			<div className='pb-6 sm:col-span-2'>
-				{' '}
-				{/* pb-6 резерв места под ошибку */}
 				<FormField
 					control={control}
 					name={`passengers.${index}.documentType`}
@@ -105,100 +102,109 @@ export function PassengerDocs({ index }: Props) {
 				/>
 			</div>
 
-			{/* --- ЛОГИКА ДЛЯ СВИДЕТЕЛЬСТВА О РОЖДЕНИИ --- */}
 			{documentType === 'birth_certificate' ? (
-				<div className='grid grid-cols-12 items-start gap-4 sm:col-span-2'>
-					{/* 1. Серия (Римские цифры) */}
-					<div className='relative col-span-4 pb-6'>
-						<FormLabel className='text-muted-foreground mb-2 block text-xs'>
-							Серия
-						</FormLabel>
-						<Select
-							value={romanPart} // Значение берется из useWatch
-							onValueChange={newRoman => {
-								// Берем текущие буквы (или пустую строку) и склеиваем
-								const newValue = `${newRoman}-${lettersPart}`
-								setValue(`passengers.${index}.documentSeries`, newValue, {
-									shouldValidate: true
-								})
-							}}
-						>
-							<FormControl>
-								<SelectTrigger>
-									<SelectValue placeholder='I' />
-								</SelectTrigger>
-							</FormControl>
-							<SelectContent>
-								{romanNumerals.map(r => (
-									<SelectItem
-										key={r}
-										value={r}
-									>
-										{r}
-									</SelectItem>
-								))}
-							</SelectContent>
-						</Select>
+				<div className='col-span-2'>
+					{/* Контейнер: Flex, выравнивание по верху, отступ между элементами */}
+					<div className='flex w-full items-start gap-4'>
+						{/* 1. Серия (Римские цифры) - Фиксированная ширина */}
+						<div className='w-[80px] shrink-0'>
+							<FormLabel className='text-muted-foreground mb-2 block text-xs'>
+								Серия
+							</FormLabel>
+							<Select
+								value={romanPart}
+								onValueChange={newRoman => {
+									const newValue = `${newRoman}-${lettersPart}`
+									setValue(`passengers.${index}.documentSeries`, newValue, {
+										shouldValidate: true
+									})
+								}}
+							>
+								<FormControl>
+									<SelectTrigger>
+										<SelectValue placeholder='I' />
+									</SelectTrigger>
+								</FormControl>
+								<SelectContent>
+									{romanNumerals.map(r => (
+										<SelectItem
+											key={r}
+											value={r}
+										>
+											{r}
+										</SelectItem>
+									))}
+								</SelectContent>
+							</Select>
+						</div>
+
+						{/* 2. Серия (Буквы) - Фиксированная ширина */}
+						<div className='w-[80px] shrink-0'>
+							<FormLabel className='text-muted-foreground mb-2 block text-xs'>
+								Буквы
+							</FormLabel>
+							<Input
+								value={lettersPart}
+								placeholder='АА'
+								maxLength={2}
+								className='uppercase'
+								onChange={e => {
+									const val = e.target.value
+										.replace(/[^а-яА-Я]/g, '')
+										.toUpperCase()
+									const currentRoman = romanPart || 'I'
+									const newValue = `${currentRoman}-${val}`
+									setValue(`passengers.${index}.documentSeries`, newValue, {
+										shouldValidate: true
+									})
+								}}
+							/>
+						</div>
+
+						{/* 3. Номер документа - РАСТЯГИВАЕТСЯ (flex-1) */}
+						<div className='flex-1'>
+							<FormField
+								control={control}
+								name={`passengers.${index}.documentNumber`}
+								render={({ field }) => (
+									<FormItem className='gap-0 space-y-0'>
+										<FormLabel className='text-muted-foreground mb-2 block text-xs'>
+											Номер
+										</FormLabel>
+										<FormControl>
+											<Input
+												placeholder='123456'
+												maxLength={6}
+												inputMode='numeric'
+												className='w-full' // Гарантирует ширину
+												{...field}
+											/>
+										</FormControl>
+										{/* Ошибка именно для поля "Номер" */}
+										<FormMessage className='mt-1 text-xs text-red-500' />
+									</FormItem>
+								)}
+							/>
+						</div>
 					</div>
 
-					{/* 2. Серия (Буквы Кириллицы) */}
-					<div className='relative col-span-3 pb-6'>
-						<FormLabel className='text-muted-foreground mb-2 block text-xs'>
-							Буквы
-						</FormLabel>
-						<Input
-							value={lettersPart} // Значение берется из useWatch
-							placeholder='АА'
-							maxLength={2}
-							onChange={e => {
-								// Оставляем только кириллицу и переводим в верхний регистр
-								const val = e.target.value
-									.replace(/[^а-яА-Я]/g, '')
-									.toUpperCase()
-								// Если римская цифра еще не выбрана, ставим 'I' по умолчанию
-								const currentRoman = romanPart || 'I'
-								const newValue = `${currentRoman}-${val}`
-								setValue(`passengers.${index}.documentSeries`, newValue, {
-									shouldValidate: true
-								})
-							}}
-						/>
-					</div>
-
-					{/* 3. Номер документа */}
-					<div className='relative col-span-5 pb-6'>
-						<FormField
-							control={control}
-							name={`passengers.${index}.documentNumber`}
-							render={({ field }) => (
-								<FormItem className='relative space-y-0'>
-									<FormLabel className='text-muted-foreground mb-2 block text-xs'>
-										Номер
-									</FormLabel>
-									<FormControl>
-										<Input
-											placeholder='123456'
-											maxLength={6}
-											inputMode='numeric'
-											{...field}
-										/>
-									</FormControl>
-									<FormMessage className='absolute top-full left-0 mt-1 text-xs text-red-500' />
-								</FormItem>
-							)}
-						/>
-					</div>
-
-					{/* 4. СКРЫТОЕ ПОЛЕ ДЛЯ ОШИБКИ СЕРИИ */}
-					{/* Это поле невидимо, но оно отображает ошибку для documentSeries (например, "Введите серию") */}
-					<div className='relative col-span-12 -mt-6 h-4'>
+					{/* 4. Общая ошибка для СЕРИИ (выводится под полями) */}
+					{/* Используем стандартный FormItem + FormMessage для корректной работы */}
+					<div className='mt-1 min-h-[20px]'>
 						<FormField
 							control={control}
 							name={`passengers.${index}.documentSeries`}
-							render={({ fieldState }) => (
-								<p className='absolute top-0 left-0 text-xs text-red-500'>
-									{fieldState.error?.message}
-								</p>
+							render={({ field }) => (
+								<FormItem className='space-y-0'>
+									{/* Мы скрываем input, так как он составной выше, но показываем ошибку */}
+									<FormControl>
+										<input
+											type='hidden'
+											{...field}
+										/>
+									</FormControl>
+									<FormMessage className='text-xs text-red-500' />
+								</FormItem>
 							)}
 						/>
 					</div>

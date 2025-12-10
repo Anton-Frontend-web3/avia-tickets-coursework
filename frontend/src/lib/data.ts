@@ -2,14 +2,81 @@ import 'server-only'
 
 import { pool } from '@/lib/db'
 export type SelectOption = {
-	value: string // Будет содержать ID
-	label: string // Будет содержать понятное имя
+	value: string 
+	label: string 
 }
 // Наш тип Flight
 import { IFlight } from '@/app/search/page'
 import { IPassengerCheck } from '@/shared/types/pessenger.type'
 import { BookingDetails } from '@/shared/types/bookins.interface'
 import { differenceInYears } from 'date-fns'
+
+export async function getFlights(from: string, to: string, date: string, returnDate?: string) {
+    try {
+        const queryParams: (string | number)[] = [from, to, date];
+        let dateCondition = "";
+
+        if (returnDate) {
+            // ДИАПАЗОН
+            dateCondition = `
+                AND (f.departure_datetime AT TIME ZONE dep.time_zone)::date >= $3::date 
+                AND (f.departure_datetime AT TIME ZONE dep.time_zone)::date <= $4::date
+            `;
+            queryParams.push(returnDate);
+        } else {
+            // КОНКРЕТНЫЙ ДЕНЬ
+            dateCondition = `
+                AND (f.departure_datetime AT TIME ZONE dep.time_zone)::date = $3::date
+            `;
+        }
+
+        const sqlQuery = `
+            SELECT
+                f.flight_id, 
+                s.flight_number, 
+                
+                -- Время (сконвертированное в местное)
+                (f.departure_datetime AT TIME ZONE dep.time_zone) as departure_datetime,
+                (f.arrival_datetime AT TIME ZONE arr.time_zone) as arrival_datetime,
+                
+                f.base_price,
+                
+                -- Вылет
+                dep.city AS departure_city, 
+                dep.iata_code AS departure_code, 
+                dep.time_zone AS departure_timezone,
+                dep.airport_name AS departure_airport_name, -- Новое поле (Название аэропорта)
+                
+                -- Прилет
+                arr.city AS arrival_city, 
+                arr.iata_code AS arrival_code,
+                arr.time_zone AS arrival_timezone,
+                arr.airport_name AS arrival_airport_name,   -- Новое поле
+                
+                -- Авиакомпания
+                arl.name AS airline_name, 
+                arl.logo_url
+            FROM Flights f
+            JOIN Schedules s ON f.schedule_id = s.schedule_id
+            JOIN Airports dep ON s.departure_airport_id = dep.airport_id
+            JOIN Airports arr ON s.arrival_airport_id = arr.airport_id
+            JOIN Aircrafts ac ON f.aircraft_id = ac.aircraft_id
+            JOIN Airlines arl ON ac.airline_id = arl.airline_id
+            WHERE dep.city = $1 
+              AND arr.city = $2
+              ${dateCondition}
+              AND f.departure_datetime > NOW() -- Скрываем улетевшие (по UTC)
+            ORDER BY f.departure_datetime ASC;
+        `;
+
+        const result = await pool.query(sqlQuery, queryParams);
+        return result.rows;
+    } catch (error) {
+        console.error('Database Error:', error);
+        throw new Error('Failed to fetch flights.');
+    }
+}
+
 export async function getFlightDetailsById(
 	flightId: string
 ): Promise<IFlight | null> {
@@ -113,6 +180,79 @@ export async function getAllSchedules() {
 	}
 }
 
+export async function getScheduleById(id: number) {
+	try {
+		const result = await pool.query(
+			`SELECT * FROM Schedules WHERE schedule_id = $1`,
+			[id]
+		)
+
+		if (result.rows.length === 0) return null
+		return result.rows[0]
+	} catch (error) {
+		console.error('Database Error:', error)
+		return null
+	}
+}
+
+export async function getDashboardStats() {
+	try {
+		// 1. Общее количество бронирований
+		const bookingsCountRes = await pool.query(
+			`SELECT COUNT(*) FROM Bookings WHERE status = 'Confirmed'`
+		)
+		const totalBookings = parseInt(bookingsCountRes.rows[0].count)
+
+		// 2. Общая выручка (сумма цен билетов + багаж, упрощенно берем base_price)
+		// В реальности нужно учитывать цену багажа, если она отдельно
+		const revenueRes = await pool.query(`
+            SELECT SUM(f.base_price) as total 
+            FROM Bookings b 
+            JOIN Flights f ON b.flight_id = f.flight_id 
+            WHERE b.status = 'Confirmed'
+        `)
+		const totalRevenue = parseInt(revenueRes.rows[0].total || '0')
+
+		// 3. Количество предстоящих рейсов
+		const flightsRes = await pool.query(
+			`SELECT COUNT(*) FROM Flights WHERE departure_datetime > NOW()`
+		)
+		const upcomingFlights = parseInt(flightsRes.rows[0].count)
+
+		// 4. Последние 5 бронирований для таблицы
+		const recentBookingsRes = await pool.query(`
+            SELECT 
+                b.booking_id,
+                b.ticket_number,
+                b.status,
+                b.booking_datetime,
+                p.last_name,
+                p.first_name,
+                f.base_price
+            FROM Bookings b
+            JOIN Passengers p ON b.passenger_id = p.passenger_id
+            JOIN Flights f ON b.flight_id = f.flight_id
+            ORDER BY b.booking_datetime DESC
+            LIMIT 5
+        `)
+
+		return {
+			totalBookings,
+			totalRevenue,
+			upcomingFlights,
+			recentBookings: recentBookingsRes.rows
+		}
+	} catch (error) {
+		console.error('Dashboard Stats Error:', error)
+		return {
+			totalBookings: 0,
+			totalRevenue: 0,
+			upcomingFlights: 0,
+			recentBookings: []
+		}
+	}
+}
+
 export async function getAirportsForSelect(): Promise<SelectOption[]> {
 	try {
 		const result = await pool.query(
@@ -122,7 +262,7 @@ export async function getAirportsForSelect(): Promise<SelectOption[]> {
 		// Преобразуем данные из базы в формат, удобный для <Select> компонента
 		return result.rows.map(airport => ({
 			value: airport.airport_id.toString(),
-			label: `${airport.city} (${airport.iata_code}) - ${airport.airport_name}`
+			label: `${airport.city} - ${airport.airport_name}`
 		}))
 	} catch (error) {
 		console.error('Database Error: Failed to fetch airports.', error)
@@ -216,16 +356,17 @@ export async function getBookingDetails(
 	}
 }
 export async function getCheckInSession(ticketNumber: string) {
-    // 1. Получаем PNR ... (без изменений)
-    const refRes = await pool.query(
-        `SELECT booking_reference, flight_id FROM Bookings WHERE ticket_number = $1`, 
-        [ticketNumber]
-    );
-    if (refRes.rows.length === 0) return null;
-    const { booking_reference, flight_id } = refRes.rows[0];
+	// 1. Получаем PNR ... (без изменений)
+	const refRes = await pool.query(
+		`SELECT booking_reference, flight_id FROM Bookings WHERE ticket_number = $1 AND status = 'Confirmed'`,
+		[ticketNumber]
+	)
+	if (refRes.rows.length === 0) return null
+	const { booking_reference, flight_id } = refRes.rows[0]
 
-    // 2. Получаем данные рейса СНАЧАЛА, чтобы знать дату вылета
-    const flightRes = await pool.query(`
+	// 2. Получаем данные рейса СНАЧАЛА, чтобы знать дату вылета
+	const flightRes = await pool.query(
+		`
         SELECT 
             f.flight_id, 
             f.departure_datetime,
@@ -234,12 +375,15 @@ export async function getCheckInSession(ticketNumber: string) {
         JOIN Aircrafts a ON f.aircraft_id = a.aircraft_id
         JOIN Aircraft_Models am ON a.model_id = am.model_id
         WHERE f.flight_id = $1
-    `, [flight_id]);
+    `,
+		[flight_id]
+	)
 
-    const flight = flightRes.rows[0];
+	const flight = flightRes.rows[0]
 
-    // 3. Теперь тащим пассажиров и сразу считаем, кто младенец
-    const groupRes = await pool.query(`
+	// 3. Теперь тащим пассажиров и сразу считаем, кто младенец
+	const groupRes = await pool.query(
+		`
         SELECT 
             b.ticket_number,
             b.seat_number,
@@ -251,42 +395,51 @@ export async function getCheckInSession(ticketNumber: string) {
         JOIN Passengers p ON b.passenger_id = p.passenger_id
         WHERE b.booking_reference = $1 AND b.flight_id = $2
         ORDER BY p.birth_date -- Сначала старшие, младенцы в конце
-    `, [booking_reference, flight_id]);
+    `,
+		[booking_reference, flight_id]
+	)
 
-    // Добавляем флаг is_infant
-    const passengers = groupRes.rows.map(p => {
-        const age = differenceInYears(new Date(flight.departure_datetime), new Date(p.birth_date));
-        return {
-            ...p,
-            is_infant: age < 2 // Младенец, если меньше 2 лет
-        };
-    });
+	// Добавляем флаг is_infant
+	const passengers = groupRes.rows.map(p => {
+		const age = differenceInYears(
+			new Date(flight.departure_datetime),
+			new Date(p.birth_date)
+		)
+		return {
+			...p,
+			is_infant: age < 2 // Младенец, если меньше 2 лет
+		}
+	})
 
-    // 4. Занятые места (без изменений)
-    const occupiedRes = await pool.query(`
+	// 4. Занятые места (без изменений)
+	const occupiedRes = await pool.query(
+		`
         SELECT seat_number FROM Bookings 
         WHERE flight_id = $1 AND seat_number IS NOT NULL AND status = 'Confirmed'
-    `, [flight_id]);
+    `,
+		[flight_id]
+	)
 
-    return {
-        flight,
-        passengers, 
-        occupiedSeats: occupiedRes.rows.map(r => r.seat_number)
-    };
+	return {
+		flight,
+		passengers,
+		occupiedSeats: occupiedRes.rows.map(r => r.seat_number)
+	}
 }
 
-async function getBoardingPasses(ticketNumber: string) {
-    // 1. Узнаем PNR
-    const refRes = await pool.query(
-        `SELECT booking_reference FROM Bookings WHERE ticket_number = $1`, 
-        [ticketNumber]
-    );
-    
-    if (refRes.rows.length === 0) return [];
-    const { booking_reference } = refRes.rows[0];
+export async function getBoardingPasses(ticketNumber: string) {
+	// 1. Узнаем PNR
+	const refRes = await pool.query(
+		`SELECT booking_reference FROM Bookings WHERE ticket_number = $1`,
+		[ticketNumber]
+	)
 
-    // 2. Ищем все посадочные талоны этой группы
-    const res = await pool.query(`
+	if (refRes.rows.length === 0) return []
+	const { booking_reference } = refRes.rows[0]
+
+	// 2. Ищем все посадочные талоны этой группы
+	const res = await pool.query(
+		`
         SELECT 
             b.ticket_number,
             b.seat_number,
@@ -306,7 +459,116 @@ async function getBoardingPasses(ticketNumber: string) {
         JOIN Airlines arl ON a.airline_id = arl.airline_id
         WHERE b.booking_reference = $1 AND b.check_in_status = 'Checked-in'
         ORDER BY p.last_name
-    `, [booking_reference]);
+    `,
+		[booking_reference]
+	)
 
-    return res.rows;
+	return res.rows
+}
+
+export async function getSalesChartData() {
+	try {
+		// Запрос: берем последние 7 дней, группируем по дате, суммируем выручку
+		// TO_CHAR форматирует дату в "06.12" (день.месяц)
+		const result = await pool.query(`
+            SELECT 
+                TO_CHAR(b.booking_datetime, 'DD.MM') as name,
+                SUM(f.base_price) as total
+            FROM Bookings b
+            JOIN Flights f ON b.flight_id = f.flight_id
+            WHERE b.status = 'Confirmed' 
+              AND b.booking_datetime > NOW() - INTERVAL '7 days'
+            GROUP BY TO_CHAR(b.booking_datetime, 'DD.MM'), DATE(b.booking_datetime)
+            ORDER BY DATE(b.booking_datetime) ASC
+        `)
+
+		// Если продаж не было, вернем пустой массив или можно заполнить нулями (для простоты вернем как есть)
+		return result.rows
+	} catch (error) {
+		console.error('Chart Data Error:', error)
+		return []
+	}
+}
+
+export async function getSystemHealth() {
+	const start = performance.now()
+
+	try {
+		// 1. Простой запрос для проверки связи и замера времени (Ping)
+		await pool.query('SELECT 1')
+		const duration = Math.round(performance.now() - start)
+
+		// 2. Получаем количество активных подключений
+		// pg_stat_activity - системная таблица Postgres
+		const connectionsRes = await pool.query(`
+            SELECT count(*)::int as active 
+            FROM pg_stat_activity 
+            WHERE state = 'active'
+        `)
+		const activeConnections = connectionsRes.rows[0].active
+
+		// 3. Получаем версию Postgres
+		const versionRes = await pool.query('SHOW server_version')
+		const version = versionRes.rows[0].server_version
+
+		// 4. Uptime процесса Node.js
+		const uptimeSeconds = process.uptime()
+
+		return {
+			status: 'online',
+			latency: duration,
+			activeConnections,
+			version,
+			uptime: uptimeSeconds
+		}
+	} catch (error) {
+		console.error('Health Check Failed:', error)
+		return {
+			status: 'offline',
+			latency: 0,
+			activeConnections: 0,
+			version: 'Unknown',
+			uptime: 0
+		}
+	}
+}
+
+const ITEMS_PER_PAGE = 10;
+
+export async function getFilteredUsers(query: string, currentPage: number) {
+    // Вычисляем, сколько записей пропустить
+    const offset = (currentPage - 1) * ITEMS_PER_PAGE;
+
+    try {
+        // 1. Получаем пользователей (с учетом поиска и пагинации)
+        const usersPromise = pool.query(`
+            SELECT user_id, email, role 
+            FROM Users 
+            WHERE email ILIKE $1 
+            ORDER BY user_id ASC
+            LIMIT $2 OFFSET $3
+        `, [`%${query}%`, ITEMS_PER_PAGE, offset]);
+
+        // 2. Считаем общее количество (чтобы знать, сколько страниц рисовать)
+        const countPromise = pool.query(`
+            SELECT COUNT(*) 
+            FROM Users 
+            WHERE email ILIKE $1
+        `, [`%${query}%`]);
+
+        // Запускаем параллельно
+        const [usersRes, countRes] = await Promise.all([usersPromise, countPromise]);
+
+        // Вычисляем общее количество страниц
+        const totalPages = Math.ceil(Number(countRes.rows[0].count) / ITEMS_PER_PAGE);
+
+        return {
+            users: usersRes.rows,
+            totalPages
+        };
+
+    } catch (error) {
+        console.error("Fetch Users Error:", error);
+        return { users: [], totalPages: 0 };
+    }
 }

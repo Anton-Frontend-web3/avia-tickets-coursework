@@ -50,12 +50,12 @@ export function CityComboBox({
 					className='w-full justify-between'
 				>
 					<span className='flex-grow text-left'>
-						{isLoading
-							? 'Loading...'
-							: value
-								? cities.find(city => city === value)
-								: placeholder}
-					</span>
+  {isLoading
+    ? 'Loading...'
+    : value
+      ? cities.find(city => city === value) || value
+      : placeholder ?? 'Выберите город'}
+</span>
 					<ChevronsUpDown className='left ml-2 h-4 w-4 shrink-0 opacity-50' />
 				</Button>
 			</PopoverTrigger>

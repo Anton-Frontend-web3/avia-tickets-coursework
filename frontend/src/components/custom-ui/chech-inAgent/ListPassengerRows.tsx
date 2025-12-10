@@ -1,7 +1,7 @@
 import { updateCheckInStatus } from '@/lib/actions'
 import { memo, useTransition } from 'react'
-import { TableCell, TableRow } from '../ui/table'
-import { Checkbox } from '../ui/checkbox'
+import { TableCell, TableRow } from '@/components/ui/table'
+import { Checkbox } from '@/components/ui/checkbox'
 import { IPassengerCheck } from '@/shared/types/pessenger.type'
 
 interface IPassengerRowProps {

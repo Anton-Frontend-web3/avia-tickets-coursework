@@ -44,29 +44,29 @@ export default function CheckInPage() {
 	})
 
 	async function onSubmit(values: CheckInAuthValues) {
-        setIsLoading(true)
-        try {
-            // Server Action возвращает теперь redirectTicket
-            const result: any = await findBookingForCheckIn(values)
+		setIsLoading(true)
+		try {
+			// Server Action возвращает теперь redirectTicket
+			const result: any = await findBookingForCheckIn(values)
 
-            if (result.error) {
-                toast.error(result.error)
-                return
-            }
+			if (result.error) {
+				toast.error(result.error)
+				return
+			}
 
-            if (result.success) {
-                toast.success("Бронирование найдено!")
-                
-                const targetTicket = result.redirectTicket || values.ticketNumber;
-                
-                router.push(`/check-in/${targetTicket}`)
-            }
-        } catch (e) {
-            toast.error("Произошла ошибка")
-        } finally {
-            setIsLoading(false)
-        }
-    }
+			if (result.success) {
+				toast.success('Бронирование найдено!')
+
+				const targetTicket = result.redirectTicket || values.ticketNumber
+
+				router.push(`/check-in/${targetTicket}`)
+			}
+		} catch (e) {
+			toast.error('Произошла ошибка')
+		} finally {
+			setIsLoading(false)
+		}
+	}
 
 	return (
 		<div className='flex min-h-[80vh] items-center justify-center p-4'>

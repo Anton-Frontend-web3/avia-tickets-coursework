@@ -16,7 +16,7 @@ import {
 import { Button } from '@/components/ui/button'
 import { Form } from '@/components/ui/form'
 import { PassengerCard } from '@/components/custom-ui/booking/PassengerCard'
-import { SeatMap } from '@/components/custom-ui/booking/SeatMap'
+
 interface Props {
 	flightId: number
 	initialCounts: { adults: number; children: number; infants: number }
@@ -147,9 +147,9 @@ export function BookingForm({ flightId, initialCounts, baggageOption }: Props) {
 				))}
 
 				{/* Панель с кнопкой и информацией о тарифе */}
-				<div className='bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky bottom-4 z-10 flex flex-col gap-3 rounded-xl border p-4 shadow-2xl backdrop-blur'>
+				<div className='bg-background/95 supports-[backdrop-filter]:bg-background/80 border-border sticky bottom-4 z-10 flex flex-col gap-3 rounded-xl border p-4 shadow-2xl backdrop-blur'>
 					{/* Информационная плашка о выбранном багаже */}
-					<div className='flex items-center justify-between rounded-lg border border-blue-100 bg-blue-50 px-4 py-2 text-blue-900'>
+					<div className='border-primary/30 bg-primary/10 text-foreground flex items-center justify-between rounded-lg border px-4 py-2'>
 						<div className='flex items-center gap-2'>
 							<Briefcase className='h-4 w-4' />
 							<span className='text-sm font-medium'>
@@ -165,9 +165,7 @@ export function BookingForm({ flightId, initialCounts, baggageOption }: Props) {
 						className='w-full text-lg font-medium'
 						disabled={isSubmitting || fields.length === 0}
 					>
-						{isSubmitting
-							? 'Оформляем бронирование...'
-							: `Забронировать · ${fields.length} пассажир(ов)`}
+						{isSubmitting ? 'Оформляем бронирование...' : `Забронировать`}
 					</Button>
 				</div>
 			</form>

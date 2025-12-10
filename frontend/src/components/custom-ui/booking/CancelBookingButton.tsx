@@ -34,7 +34,7 @@ export function CancelBookingButton({ bookingId }: Props) {
 			if (result.success) {
 				toast.success('Билет успешно возвращен')
 				setOpen(false)
-				router.refresh() // Обновляем UI
+				router.refresh()
 			} else {
 				toast.error(result.error || 'Ошибка')
 			}
@@ -54,22 +54,34 @@ export function CancelBookingButton({ bookingId }: Props) {
 					Вернуть билет
 				</Button>
 			</AlertDialogTrigger>
-			<AlertDialogContent>
+
+			<AlertDialogContent className='bg-background border-border sm:max-w-[425px]'>
 				<AlertDialogHeader>
-					<AlertDialogTitle>Вы уверены?</AlertDialogTitle>
-					<AlertDialogDescription>
+					<AlertDialogTitle className='text-foreground'>
+						Вы уверены?
+					</AlertDialogTitle>
+					<AlertDialogDescription className='text-muted-foreground'>
 						Это действие отменит ваше бронирование. Статус билета изменится на
 						"Отменен". Это действие необратимо.
 					</AlertDialogDescription>
 				</AlertDialogHeader>
 				<AlertDialogFooter>
-					<AlertDialogCancel disabled={isPending}>Отмена</AlertDialogCancel>
+					<AlertDialogCancel
+						disabled={isPending}
+						className='bg-background text-foreground border-border hover:bg-muted'
+					>
+						Отмена
+					</AlertDialogCancel>
+
 					<AlertDialogAction
 						onClick={e => {
-							e.preventDefault() // Предотвращаем автоматическое закрытие
+							e.preventDefault()
 							handleCancel()
 						}}
-						className='bg-red-600 hover:bg-red-700 focus:ring-red-600'
+						// Адаптация красной кнопки:
+						// Light: Ярко-красный фон, белый текст
+						// Dark: Темно-красный фон (red-900), светлый текст (red-100) — чтобы не резало глаза
+						className='bg-red-600 text-white hover:bg-red-700 dark:border-red-900 dark:bg-red-900 dark:text-red-100 dark:hover:bg-red-800'
 						disabled={isPending}
 					>
 						{isPending ? 'Возврат...' : 'Да, вернуть билет'}

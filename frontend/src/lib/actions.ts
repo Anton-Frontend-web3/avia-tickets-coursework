@@ -1,8 +1,10 @@
 'use server'
-
+import { v4 as uuidv4 } from 'uuid'; 
+import { sendResetEmail } from '@/lib/mail';
 import { cookies } from 'next/headers'
 import { z } from 'zod'
 import { pool } from '@/lib/db'
+import type { PoolClient } from 'pg'
 import bcrypt from 'bcryptjs'
 import { redirect } from 'next/navigation'
 import { revalidatePath } from 'next/cache'
@@ -33,6 +35,26 @@ export type CreateScheduleResult = {
 	success?: boolean
 }
 
+async function generateUniqueTicketNumber(
+	client: PoolClient,
+	maxAttempts = 5
+): Promise<string> {
+	for (let i = 0; i < maxAttempts; i++) {
+		const ticketNumber = `TKT-${Math.random()
+			.toString(36)
+			.slice(2, 11)
+			.toUpperCase()}`
+
+		const exists = await client.query(
+			'SELECT 1 FROM bookings WHERE ticket_number = $1',
+			[ticketNumber]
+		)
+
+		if (exists.rowCount === 0) return ticketNumber
+	}
+	throw new Error('TICKET_GENERATION_FAILED')
+}
+
 // --- СХЕМЫ ---
 
 const registerSchema = z.object({
@@ -54,8 +76,11 @@ const scheduleSchemaOnServer = z.object({
 	}),
 	days_of_week: z
 		.array(z.string())
-		.min(1, { message: 'Выберите хотя бы один день недели.' })
+		.min(1, { message: 'Выберите хотя бы один день недели.' }),
+    // Новое поле
+    arrival_day_offset: z.string(), 
 })
+
 type ScheduleData = z.infer<typeof scheduleSchemaOnServer>
 
 // --- СХЕМЫ ДЛЯ БРОНИРОВАНИЯ ---
@@ -126,13 +151,14 @@ export async function createBooking(
 	}
 
 	const passengerData = validatedFields.data
-	const { flightId, documentNumber } = passengerData
+	const { flightId } = passengerData
 
-	// Безопасное получение validUntil без `any`
 	const validUntil =
 		passengerData.documentType === 'passport_international'
 			? passengerData.validUntil
 			: null
+
+	const client = await pool.connect()
 
 	try {
 		const session = await getServerSession(authOptions)
@@ -140,7 +166,7 @@ export async function createBooking(
 
 		if (session?.user?.id) {
 			const parsedId = parseInt(session.user.id, 10)
-			const userExists = await pool.query(
+			const userExists = await client.query(
 				'SELECT user_id FROM users WHERE user_id = $1',
 				[parsedId]
 			)
@@ -155,20 +181,22 @@ export async function createBooking(
 			}
 		}
 
-		let passengerResult = await pool.query(
+		await client.query('BEGIN')
+
+		const passengerResult = await client.query(
 			`INSERT INTO passengers (
               last_name, first_name, middle_name, birth_date, gender, 
               document_type, document_series, document_number, valid_until, user_id
            ) 
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) 
-           ON CONFLICT (document_number) DO UPDATE SET 
+           ON CONFLICT (document_type, document_number) DO UPDATE SET 
               last_name = EXCLUDED.last_name, 
               first_name = EXCLUDED.first_name, 
               middle_name = EXCLUDED.middle_name,
               birth_date = EXCLUDED.birth_date,
               gender = EXCLUDED.gender,
-              document_type = EXCLUDED.document_type,
               document_series = EXCLUDED.document_series,
+              document_number = EXCLUDED.document_number,
               valid_until = EXCLUDED.valid_until,
               user_id = EXCLUDED.user_id
            RETURNING passenger_id`,
@@ -186,28 +214,26 @@ export async function createBooking(
 			]
 		)
 
-		if (passengerResult.rows.length === 0) {
-			passengerResult = await pool.query(
-				'SELECT passenger_id FROM passengers WHERE document_number = $1',
-				[documentNumber]
-			)
-		}
-
 		const passengerId = passengerResult.rows[0].passenger_id
-		const ticketNumber = `TKT-${Math.random().toString(36).slice(2, 11).toUpperCase()}`
+		const ticketNumber = await generateUniqueTicketNumber(client)
 
-		await pool.query(
+		await client.query(
 			`INSERT INTO bookings (flight_id, passenger_id, ticket_number, status) 
              VALUES ($1, $2, $3, 'Confirmed')`,
 			[flightId, passengerId, ticketNumber]
 		)
-		return { success: true, ticketNumber: ticketNumber }
+
+		await client.query('COMMIT')
+		return { success: true, ticketNumber }
 	} catch (error: unknown) {
+		await client.query('ROLLBACK').catch(() => null)
 		if (error instanceof Error && error.message === 'REDIRECT_LOGIN') {
 			redirect('/login')
 		}
 		console.error('Database Error:', error)
 		return { success: false, error: 'Ошибка базы данных.' }
+	} finally {
+		client.release()
 	}
 }
 
@@ -215,41 +241,47 @@ export async function createBooking(
 export async function createBookingGroup(
 	data: unknown
 ): Promise<CreateBookingResult> {
-    // ... валидация и получение сессии (без изменений) ...
+	// ... валидация и получение сессии (без изменений) ...
 	const validatedFields = bookingGroupActionSchema.safeParse(data)
-	if (!validatedFields.success) { return { success: false, error: 'Ошибка валидации.' } }
+	if (!validatedFields.success) {
+		return { success: false, error: 'Ошибка валидации.' }
+	}
 	const { flightId, passengers, baggageOption } = validatedFields.data
 	const safeBaggage = baggageOption || 'no_baggage'
 	const session = await getServerSession(authOptions)
-	let userId: number | null = null
 	const client = await pool.connect()
 
 	try {
-        // ... (проверка зомби-сессии без изменений) ...
-		if (session?.user?.id) {
-			const parsedId = parseInt(session.user.id, 10)
-			const userExists = await client.query('SELECT user_id FROM users WHERE user_id = $1', [parsedId])
-			if (userExists.rows.length > 0) {
-				userId = parsedId
-			} else {
-				const cookieStore = await cookies()
-				cookieStore.delete('next-auth.session-token')
-				cookieStore.delete('__Secure-next-auth.session-token')
-				throw new Error('REDIRECT_LOGIN')
-			}
-		} else {
+		// ... (проверка зомби-сессии без изменений) ...
+		if (!session?.user?.id) {
+			throw new Error('REDIRECT_LOGIN')
+		}
+
+		const parsedId = parseInt(session.user.id, 10)
+		const userExists = await client.query(
+			'SELECT user_id FROM users WHERE user_id = $1',
+			[parsedId]
+		)
+		if (userExists.rows.length === 0) {
+			const cookieStore = await cookies()
+			cookieStore.delete('next-auth.session-token')
+			cookieStore.delete('__Secure-next-auth.session-token')
 			throw new Error('REDIRECT_LOGIN')
 		}
 
 		await client.query('BEGIN')
 
-        // --- ИЗМЕНЕНИЕ 1: Генерируем общий код бронирования (PNR) для всей группы ---
-        const bookingReference = Math.random().toString(36).substring(2, 8).toUpperCase();
+		// --- ИЗМЕНЕНИЕ 1: Генерируем общий код бронирования (PNR) для всей группы ---
+		const bookingReference = Math.random()
+			.toString(36)
+			.substring(2, 8)
+			.toUpperCase()
 
 		const tickets: string[] = []
 
 		for (const p of passengers) {
-			const validUntil = p.documentType === 'passport_international' ? p.validUntil : null
+			const validUntil =
+				p.documentType === 'passport_international' ? p.validUntil : null
 
 			// ... (INSERT пассажира без изменений) ...
 			let passengerResult = await client.query(
@@ -268,18 +300,22 @@ export async function createBookingGroup(
                     valid_until = EXCLUDED.valid_until,
                     user_id = EXCLUDED.user_id
                  RETURNING passenger_id`,
-				[p.lastName, p.firstName, p.middleName || null, p.birthDate, p.gender, p.documentType, p.documentSeries || null, p.documentNumber, validUntil, userId]
+				[
+					p.lastName,
+					p.firstName,
+					p.middleName || null,
+					p.birthDate,
+					p.gender,
+					p.documentType,
+					p.documentSeries || null,
+					p.documentNumber,
+					validUntil,
+					parsedId
+				]
 			)
 
-			if (passengerResult.rows.length === 0) {
-				passengerResult = await client.query(
-					'SELECT passenger_id FROM passengers WHERE document_type = $1 AND document_number = $2',
-					[p.documentType, p.documentNumber]
-				)
-			}
-
 			const passengerId = passengerResult.rows[0].passenger_id
-			const ticketNumber = `TKT-${Math.random().toString(36).slice(2, 11).toUpperCase()}`
+			const ticketNumber = await generateUniqueTicketNumber(client)
 			tickets.push(ticketNumber)
 
 			// --- ИЗМЕНЕНИЕ 2: Добавляем booking_reference в INSERT ---
@@ -293,14 +329,8 @@ export async function createBookingGroup(
                     seat_number, 
                     booking_reference  
                 ) 
-				 VALUES ($1, $2, $3, 'Confirmed', $4, NULL, $5)`, 
-				[
-                    flightId, 
-                    passengerId, 
-                    ticketNumber, 
-                    safeBaggage, 
-                    bookingReference 
-                ]
+				 VALUES ($1, $2, $3, 'Confirmed', $4, NULL, $5)`,
+				[flightId, passengerId, ticketNumber, safeBaggage, bookingReference]
 			)
 		}
 
@@ -308,9 +338,8 @@ export async function createBookingGroup(
 
 		revalidatePath('/profile')
 		return { success: true, ticketNumber: tickets[0], ticketNumbers: tickets }
-        
 	} catch (error: unknown) {
-		await client.query('ROLLBACK')
+		await client.query('ROLLBACK').catch(() => null)
 		if (error instanceof Error && error.message === 'REDIRECT_LOGIN') {
 			redirect('/login')
 		}
@@ -360,23 +389,34 @@ export async function createSchedule(
 		arrival_airport_id,
 		departure_time,
 		arrival_time,
-		days_of_week
+		days_of_week,
+        arrival_day_offset // Достаем новое поле
 	} = validatedFields.data
 
 	try {
 		await pool.query(
 			`INSERT INTO schedules 
-          (flight_number, departure_airport_id, arrival_airport_id, departure_time, arrival_time, days_of_week) 
-         VALUES ($1, $2, $3, $4, $5, $6)`,
+          (
+            flight_number, 
+            departure_airport_id, 
+            arrival_airport_id, 
+            departure_time, 
+            arrival_time, 
+            days_of_week, 
+            arrival_day_offset -- Добавляем колонку
+          ) 
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`, // Добавляем $7
 			[
 				flight_number,
 				departure_airport_id,
 				arrival_airport_id,
 				departure_time,
 				arrival_time,
-				days_of_week.map(day => parseInt(day, 10))
+				days_of_week.map(day => parseInt(day, 10)),
+                parseInt(arrival_day_offset) // Передаем значение (преобразуем строку в число)
 			]
 		)
+        // Триггер в БД сам сгенерирует рейсы (Flights)
 	} catch (error) {
 		console.error('Database Error: Failed to create schedule.', error)
 		return { success: false, error: 'Не удалось создать расписание.' }
@@ -385,6 +425,195 @@ export async function createSchedule(
 	revalidatePath('/admin/schedules')
 	redirect('/admin/schedules')
 }
+
+export async function deleteSchedule(scheduleId: number) {
+	const client = await pool.connect()
+
+	try {
+		await client.query('BEGIN')
+
+		// 1. ПРОВЕРКА: Есть ли купленные билеты на рейсы этого расписания?
+		// Если люди уже купили билеты, удалять расписание нельзя, иначе пропадут их билеты.
+		const bookingsCheck = await client.query(
+			`SELECT 1 
+             FROM Bookings b
+             JOIN Flights f ON b.flight_id = f.flight_id
+             WHERE f.schedule_id = $1
+             LIMIT 1`,
+			[scheduleId]
+		)
+
+		if (bookingsCheck.rowCount && bookingsCheck.rowCount > 0) {
+			await client.query('ROLLBACK')
+			return {
+				success: false,
+				error: 'Нельзя удалить: на рейсы этого расписания уже куплены билеты.'
+			}
+		}
+
+		// 2. ОЧИСТКА: Удаляем все сгенерированные рейсы (Flights) для этого расписания
+		// (Так как билетов нет, мы можем безопасно удалить пустые рейсы)
+		await client.query('DELETE FROM Flights WHERE schedule_id = $1', [
+			scheduleId
+		])
+
+		// 3. УДАЛЕНИЕ: Теперь можно удалить само расписание
+		await client.query('DELETE FROM Schedules WHERE schedule_id = $1', [
+			scheduleId
+		])
+
+		await client.query('COMMIT')
+		
+        revalidatePath('/admin/schedules')
+		return { success: true }
+	} catch (error) {
+		await client.query('ROLLBACK')
+		console.error('Delete Schedule Error:', error)
+		return { success: false, error: 'Ошибка при удалении расписания.' }
+	} finally {
+		client.release()
+	}
+}
+
+export async function updateSchedule(scheduleId: number, data: unknown) {
+	const validatedFields = scheduleSchemaOnServer.safeParse(data)
+
+	if (!validatedFields.success) {
+		return { success: false, error: 'Ошибка валидации данных.' }
+	}
+
+	const {
+		flight_number,
+		departure_airport_id,
+		arrival_airport_id,
+		departure_time,
+		arrival_time,
+		days_of_week,
+		arrival_day_offset // <-- НОВОЕ ПОЛЕ
+	} = validatedFields.data
+
+	const client = await pool.connect()
+
+	try {
+		await client.query('BEGIN')
+
+		const daysOfWeekNumbers = days_of_week.map(day => parseInt(day, 10))
+		const dayOffset = parseInt(arrival_day_offset) // Приводим к числу
+
+		// 1. ОБНОВЛЯЕМ РАСПИСАНИЕ (Добавили arrival_day_offset)
+		await client.query(
+			`UPDATE Schedules SET 
+                flight_number = $1, 
+                departure_airport_id = $2, 
+                arrival_airport_id = $3, 
+                departure_time = $4, 
+                arrival_time = $5, 
+                days_of_week = $6,
+                arrival_day_offset = $7
+             WHERE schedule_id = $8`,
+			[
+				flight_number,
+				departure_airport_id,
+				arrival_airport_id,
+				departure_time,
+				arrival_time,
+				daysOfWeekNumbers,
+				dayOffset, // <-- Передаем смещение
+				scheduleId
+			]
+		)
+
+		// 2. УДАЛЯЕМ СТАРЫЕ ПУСТЫЕ РЕЙСЫ
+		await client.query(
+			`DELETE FROM Flights 
+             WHERE schedule_id = $1 
+               AND departure_datetime > NOW()
+               AND flight_id NOT IN (SELECT flight_id FROM Bookings)`,
+			[scheduleId]
+		)
+
+		// 3. ГЕНЕРИРУЕМ НОВЫЕ РЕЙСЫ (Умная генерация с таймзонами)
+		
+		// 3.1. Получаем ID самолета и ТАЙМЗОНЫ аэропортов
+		const metaRes = await client.query(`
+            SELECT 
+                (SELECT aircraft_id FROM Aircrafts ORDER BY RANDOM() LIMIT 1) as aircraft_id,
+                (SELECT time_zone FROM Airports WHERE airport_id = $1) as dep_tz,
+                (SELECT time_zone FROM Airports WHERE airport_id = $2) as arr_tz
+        `, [departure_airport_id, arrival_airport_id]);
+
+		const { aircraft_id, dep_tz, arr_tz } = metaRes.rows[0];
+
+		if (aircraft_id && dep_tz && arr_tz) {
+			const startDate = new Date()
+			const endDate = new Date()
+			endDate.setDate(endDate.getDate() + 30)
+
+			for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+				const currentDayISO = d.getDay() === 0 ? 7 : d.getDay()
+
+				if (daysOfWeekNumbers.includes(currentDayISO)) {
+					// Формируем строку даты "YYYY-MM-DD" для SQL
+                    // Используем локальные методы, чтобы получить дату "по календарю"
+                    const year = d.getFullYear();
+                    const month = String(d.getMonth() + 1).padStart(2, '0');
+                    const day = String(d.getDate()).padStart(2, '0');
+                    const dateStr = `${year}-${month}-${day}`;
+
+					const randomPrice = Math.floor(Math.random() * (25000 - 3000 + 1) + 3000)
+
+					// ВСТАВЛЯЕМ С УЧЕТОМ ТАЙМЗОН
+                    // Мы говорим базе: "Возьми дату 2025-12-10 и время 10:30 В ЗОНЕ Europe/Moscow и сохрани как UTC"
+					await client.query(
+						`INSERT INTO Flights (
+                            schedule_id, 
+                            aircraft_id, 
+                            departure_datetime, 
+                            arrival_datetime, 
+                            status, 
+                            base_price
+                        )
+                         VALUES (
+                            $1, 
+                            $2, 
+                            -- Вылет: Дата + Время вылета AT TIME ZONE зона_вылета
+                            ($3::date + $4::time) AT TIME ZONE $5,
+                            
+                            -- Прилет: Дата + Время прилета + Сдвиг дней AT TIME ZONE зона_прилета
+                            ($3::date + $6::time + ($7 || ' days')::interval) AT TIME ZONE $8,
+                            
+                            'On Time', 
+                            $9
+                        )`,
+						[
+							scheduleId,
+							aircraft_id,
+							dateStr,          // $3 (Дата календаря)
+							departure_time,   // $4 (Время вылета "10:30")
+							dep_tz,           // $5 (Зона вылета "Europe/Moscow")
+							arrival_time,     // $6 (Время прилета "14:00")
+							dayOffset,        // $7 (Сдвиг дней)
+                            arr_tz,           // $8 (Зона прилета "Asia/Dubai")
+							randomPrice       // $9
+						]
+					)
+				}
+			}
+		}
+
+		await client.query('COMMIT')
+	} catch (error) {
+		await client.query('ROLLBACK')
+		console.error('Update Schedule Error:', error)
+		return { success: false, error: 'Не удалось обновить расписание.' }
+	} finally {
+		client.release()
+	}
+
+	revalidatePath('/admin/schedules')
+	redirect('/admin/schedules')
+}
+
 export async function registerUser(
 	data: z.infer<typeof registerSchema>
 ): Promise<RegisterActionState> {
@@ -419,25 +648,150 @@ export async function registerUser(
 	return { success: true }
 }
 
+export async function forgotPassword(email: string) {
+    try {
+        // Проверяем, есть ли юзер
+        const userRes = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
+        if (userRes.rows.length === 0) {
+            // Хорошая практика безопасности: не говорить, что юзера нет, 
+            // чтобы хакеры не перебирали базу. Говорим "Если email есть, мы выслали письмо".
+            return { success: true }; 
+        }
+
+        // Генерируем токен
+        const token = uuidv4();
+        // Срок действия 1 час
+        const expiresAt = new Date(Date.now() + 3600 * 1000); 
+
+        // Сохраняем токен в БД
+        await pool.query(
+            `INSERT INTO password_resets (email, token, expires_at) VALUES ($1, $2, $3)`,
+            [email, token, expiresAt]
+        );
+
+        // Отправляем письмо
+        await sendResetEmail(email, token);
+
+        return { success: true };
+    } catch (e) {
+        console.error(e);
+        return { error: "Ошибка при отправке письма" };
+    }
+}
+
+// 2. УСТАНОВКА НОВОГО ПАРОЛЯ
+export async function resetPassword(token: string, newPassword: string) {
+    try {
+        // Ищем токен в базе
+        const tokenRes = await pool.query(
+            `SELECT * FROM password_resets WHERE token = $1 AND expires_at > NOW()`,
+            [token]
+        );
+
+        if (tokenRes.rows.length === 0) {
+            return { error: "Ссылка недействительна или устарела" };
+        }
+
+        const email = tokenRes.rows[0].email;
+        
+        // Хешируем новый пароль
+        const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+        // Обновляем пользователя
+        await pool.query(
+            `UPDATE users SET password_hash = $1 WHERE email = $2`,
+            [hashedPassword, email]
+        );
+
+        // Удаляем использованный токен (и все старые для этого email)
+        await pool.query(`DELETE FROM password_resets WHERE email = $1`, [email]);
+
+        return { success: true };
+    } catch (e) {
+        console.error(e);
+        return { error: "Не удалось сменить пароль" };
+    }
+}
+
+export async function changeUserPassword(oldPassword: string, newPassword: string) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Не авторизован" }
+
+    try {
+        const userId = parseInt(session.user.id)
+
+        // Достаем хеш текущего пароля
+        const userRes = await pool.query('SELECT password_hash FROM users WHERE user_id = $1', [userId])
+        if (userRes.rows.length === 0) return { error: "Пользователь не найден" }
+
+        const currentHash = userRes.rows[0].password_hash
+
+        // Проверяем старый пароль
+        const isMatch = await bcrypt.compare(oldPassword, currentHash)
+        if (!isMatch) {
+            return { error: "Старый пароль введен неверно" }
+        }
+
+        // Хешируем новый и сохраняем
+        const newHash = await bcrypt.hash(newPassword, 10)
+        await pool.query('UPDATE users SET password_hash = $1 WHERE user_id = $2', [newHash, userId])
+
+        return { success: true }
+    } catch (e) {
+        console.error(e)
+        return { error: "Ошибка при смене пароля" }
+    }
+}
+
+// 2. СМЕНА EMAIL
+export async function changeUserEmail(newEmail: string, password: string) {
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.id) return { error: "Не авторизован" }
+
+    try {
+        const userId = parseInt(session.user.id)
+
+        // 1. Проверяем пароль (безопасность!)
+        const userRes = await pool.query('SELECT password_hash FROM users WHERE user_id = $1', [userId])
+        const currentHash = userRes.rows[0].password_hash
+        
+        const isMatch = await bcrypt.compare(password, currentHash)
+        if (!isMatch) return { error: "Неверный пароль" }
+
+        // 2. Проверяем, не занят ли новый email
+        const emailCheck = await pool.query('SELECT 1 FROM users WHERE email = $1', [newEmail])
+        if (emailCheck.rows.length > 0) return { error: "Этот email уже занят" }
+
+        // 3. Обновляем
+        await pool.query('UPDATE users SET email = $1 WHERE user_id = $2', [newEmail, userId])
+
+        // В идеале тут надо делать revalidate или даже signOut, так как сессия изменилась
+        return { success: true }
+    } catch (e) {
+        console.error(e)
+        return { error: "Ошибка при смене email" }
+    }
+}
+
 export async function cancelBooking(bookingId: number) {
 	try {
-		// 1. Проверяем авторизацию
 		const session = await getServerSession(authOptions)
 		if (!session?.user?.id) {
 			return { success: false, error: 'Не авторизован' }
 		}
 		const userId = parseInt(session.user.id)
 
-		// 2. Выполняем UPDATE, но с проверкой владельца!
-		// Мы используем FROM passengers, чтобы убедиться, что билет принадлежит именно этому юзеру
 		const result = await pool.query(
 			`UPDATE bookings
-		 SET status = 'Cancelled'
-		 FROM passengers
-		 WHERE bookings.passenger_id = passengers.passenger_id
-		   AND bookings.booking_id = $1
-		   AND passengers.user_id = $2
-		   AND bookings.status = 'Confirmed'`, // Отменяем только подтвержденные
+		     SET 
+                 status = 'Cancelled',
+                 seat_number = NULL,        
+                 check_in_status = 'Pending'
+		     FROM passengers
+		     WHERE bookings.passenger_id = passengers.passenger_id
+		       AND bookings.booking_id = $1
+		       AND passengers.user_id = $2
+		       AND bookings.status = 'Confirmed'`,
 			[bookingId, userId]
 		)
 
@@ -448,7 +802,6 @@ export async function cancelBooking(bookingId: number) {
 			}
 		}
 
-		// 3. Обновляем кэш страниц
 		revalidatePath('/profile')
 		revalidatePath(`/booking/${bookingId}`)
 
@@ -474,9 +827,9 @@ export async function findBookingForCheckIn(data: unknown) {
 
 	try {
 		// 1. Ищем бронирование:
-        // - Либо по номеру билета
-        // - Либо по коду бронирования (PNR)
-        // - ОБЯЗАТЕЛЬНО проверяем фамилию, чтобы найти нужного человека в группе
+		// - Либо по номеру билета
+		// - Либо по коду бронирования (PNR)
+		// - ОБЯЗАТЕЛЬНО проверяем фамилию, чтобы найти нужного человека в группе
 		const result = await pool.query(
 			`SELECT 
                 b.booking_id, 
@@ -489,17 +842,20 @@ export async function findBookingForCheckIn(data: unknown) {
              JOIN Passengers p ON b.passenger_id = p.passenger_id
              JOIN Flights f ON b.flight_id = f.flight_id
              WHERE (b.ticket_number = $1 OR b.booking_reference = $1)
-               AND LOWER(p.last_name) = LOWER($2)`,
+               AND LOWER(p.last_name) = LOWER($2)
+			   AND b.status = 'Confirmed'`,
 			[ticketNumber, lastName]
 		)
 
 		if (result.rows.length === 0) {
-			return { error: 'Бронирование не найдено. Проверьте номер/код и фамилию.' }
+			return {
+				error: 'Бронирование не найдено. Проверьте номер/код и фамилию.'
+			}
 		}
 
 		const booking = result.rows[0]
 
-        // (Проверка фамилии в JS больше не нужна, мы проверили её в SQL, но можно оставить для надежности)
+		// (Проверка фамилии в JS больше не нужна, мы проверили её в SQL, но можно оставить для надежности)
 
 		// 3. Проверяем время (24 часа)
 		const timeStatus = getCheckInStatus(booking.departure_datetime)
@@ -510,14 +866,13 @@ export async function findBookingForCheckIn(data: unknown) {
 
 		// 4. Проверка статуса
 		if (booking.check_in_status === 'Checked-in') {
-            // Если уже зарегистрирован, всё равно возвращаем успех и номер билета,
-            // чтобы перекинуть его на посадочный талон
+			// Если уже зарегистрирован, всё равно возвращаем успех и номер билета,
+			// чтобы перекинуть его на посадочный талон
 		}
 
 		// 5. Всё супер -> Возвращаем найденный НОМЕР БИЛЕТА
-        // Даже если юзер ввел PNR, мы вернем TKT-XXXXX
+		// Даже если юзер ввел PNR, мы вернем TKT-XXXXX
 		return { success: true, redirectTicket: booking.ticket_number }
-
 	} catch (error) {
 		console.error('Check-in find error:', error)
 		return { error: 'Ошибка сервера при поиске бронирования.' }
@@ -605,7 +960,7 @@ export async function processRandomCheckIn(ticketNumber: string) {
 		if (isRedirectError(e)) {
 			throw e
 		}
-		await client.query('ROLLBACK')
+		await client.query('ROLLBACK').catch(() => null)
 		console.error(e)
 		return { error: 'Ошибка при регистрации' }
 	} finally {
@@ -623,17 +978,28 @@ export async function processSeatSelection(
 	// Мы делаем заглушку: считаем, что оплата прошла успешно.
 
 	try {
-		// Простая проверка, не заняли ли место, пока мы думали
-		// (Для полной надежности лучше использовать транзакцию как выше)
-
-		await pool.query(
+		const result = await pool.query(
 			`
-            UPDATE Bookings 
+            WITH target AS (
+                SELECT booking_id, flight_id FROM bookings WHERE ticket_number = $2
+            )
+            UPDATE bookings b 
             SET seat_number = $1, check_in_status = 'Checked-in'
-            WHERE ticket_number = $2
+            FROM target t
+            WHERE b.booking_id = t.booking_id
+              AND NOT EXISTS (
+                  SELECT 1 FROM bookings bx 
+                  WHERE bx.flight_id = t.flight_id 
+                    AND bx.seat_number = $1 
+                    AND bx.ticket_number <> $2
+              )
         `,
 			[seatNumber, ticketNumber]
 		)
+
+		if (result.rowCount === 0) {
+			return { error: 'Место уже занято или билет не найден.' }
+		}
 
 		revalidatePath(`/check-in/${ticketNumber}`)
 		redirect(`/check-in/success?ticket=${ticketNumber}`)
@@ -647,44 +1013,98 @@ export async function processSeatSelection(
 }
 
 export async function processGroupCheckIn(
-    selections: Record<string, string>, 
-    infantTickets: string[] = [] // По умолчанию пустой массив
+	selections: Record<string, string>,
+	infantTickets: string[] = [] // По умолчанию пустой массив
 ) {
-    const client = await pool.connect();
-    try {
-        await client.query('BEGIN');
+	const client = await pool.connect()
+	try {
+		await client.query('BEGIN')
 
-        // 1. Регистрируем пассажиров с местами
-        for (const [ticketNumber, seatNumber] of Object.entries(selections)) {
-            // Можно добавить проверку занятости here
-            await client.query(`
-                UPDATE Bookings 
+		// 1. Регистрируем пассажиров с местами
+		for (const [ticketNumber, seatNumber] of Object.entries(selections)) {
+			const result = await client.query(
+				`
+                WITH target AS (
+                    SELECT booking_id, flight_id FROM bookings WHERE ticket_number = $2 FOR UPDATE
+                )
+                UPDATE bookings b 
                 SET seat_number = $1, check_in_status = 'Checked-in'
-                WHERE ticket_number = $2
-            `, [seatNumber, ticketNumber]);
-        }
+                FROM target t
+                WHERE b.booking_id = t.booking_id
+                  AND NOT EXISTS (
+                      SELECT 1 FROM bookings bx 
+                      WHERE bx.flight_id = t.flight_id 
+                        AND bx.seat_number = $1 
+                        AND bx.ticket_number <> $2
+                  )
+            `,
+				[seatNumber, ticketNumber]
+			)
 
-        // 2. Регистрируем младенцев (без места)
-        for (const ticketNumber of infantTickets) {
-            await client.query(`
+			if (result.rowCount === 0) {
+				throw new Error('SEAT_TAKEN')
+			}
+		}
+
+		// 2. Регистрируем младенцев (без места)
+		for (const ticketNumber of infantTickets) {
+			const updated = await client.query(
+				`
                 UPDATE Bookings 
                 SET seat_number = NULL, check_in_status = 'Checked-in'
                 WHERE ticket_number = $1
-            `, [ticketNumber]);
-        }
+            `,
+				[ticketNumber]
+			)
 
-        await client.query('COMMIT');
+			if (updated.rowCount === 0) {
+				throw new Error('TICKET_NOT_FOUND')
+			}
+		}
+
+		await client.query('COMMIT')
+
+		// Редирект на любой билет из группы (включая младенца, так как PNR один)
+		const firstTicket = Object.keys(selections)[0] || infantTickets[0]
+		redirect(`/check-in/success?ticket=${firstTicket}`)
+	} catch (e) {
+		if (isRedirectError(e)) throw e
+		await client.query('ROLLBACK').catch(() => null)
+		console.error(e)
+		return { error: 'Ошибка сохранения' }
+	} finally {
+		client.release()
+	}
+}
+
+export async function updateUserRole(targetUserId: number, newRole: string) {
+    const session = await getServerSession(authOptions);
+    
+    // 1. Проверка прав (только админ)
+    if (session?.user?.role !== 'admin') {
+        return { success: false, error: "У вас нет прав администратора" };
+    }
+
+    // 2. Защита: Нельзя менять роль самому себе (чтобы не заблокировать себя)
+    if (parseInt(session.user.id) === targetUserId) {
+         return { success: false, error: "Нельзя изменить роль самому себе" };
+    }
+
+    const validRoles = ['client', 'agent', 'admin'];
+    if (!validRoles.includes(newRole)) {
+        return { success: false, error: "Недопустимая роль" };
+    }
+
+    try {
+        await pool.query(
+            `UPDATE Users SET role = $1 WHERE user_id = $2`,
+            [newRole, targetUserId]
+        );
         
-        // Редирект на любой билет из группы (включая младенца, так как PNR один)
-        const firstTicket = Object.keys(selections)[0] || infantTickets[0];
-        redirect(`/check-in/success?ticket=${firstTicket}`); 
-
-    } catch (e) {
-        if (isRedirectError(e)) throw e;
-        await client.query('ROLLBACK');
-        console.error(e);
-        return { error: "Ошибка сохранения" };
-    } finally {
-        client.release();
+        revalidatePath('/admin/users'); 
+        return { success: true };
+    } catch (error) {
+        console.error("Update Role Error:", error);
+        return { success: false, error: "Ошибка базы данных" };
     }
 }

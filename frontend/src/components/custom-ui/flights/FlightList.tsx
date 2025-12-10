@@ -2,7 +2,7 @@
 
 import { IFlight } from '@/app/search/page'
 import { FlightCard } from './FlightCard'
-import { SkeletonLoader } from './SkeletonLoader'
+import { SkeletonLoader } from '../SkeletonLoader'
 import { memo } from 'react'
 
 interface FlightListProps {
