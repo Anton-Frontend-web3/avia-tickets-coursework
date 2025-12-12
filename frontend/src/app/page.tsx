@@ -1,12 +1,7 @@
-import nextDynamic from 'next/dynamic'
 import { Suspense } from 'react'
+import InputQueryFormClient from '@/components/custom-ui/search/InputQueryFormClient'
 
 export const dynamic = 'force-dynamic'
-
-const InputQueryForm = nextDynamic(
-  () => import('@/components/custom-ui/search/InputQueryForm'),
-  { ssr: false }
-)
 
 export default function HomePage() {
   return (
@@ -18,7 +13,7 @@ export default function HomePage() {
 
         <div className='w-full'>
           <Suspense fallback={null}>
-            <InputQueryForm />
+            <InputQueryFormClient />
           </Suspense>
         </div>
       </div>
