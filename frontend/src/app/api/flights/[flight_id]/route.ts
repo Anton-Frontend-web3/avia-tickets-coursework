@@ -1,12 +1,12 @@
 import { Pool } from 'pg'
-import { NextResponse } from 'next/server'
+import { NextRequest, NextResponse } from 'next/server'
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
 })
 
 export async function GET(
-  request: Request,
+  request: NextRequest,
   { params }: { params: Promise<{ flight_id: string }> }
 ) {
   const { flight_id } = await params
