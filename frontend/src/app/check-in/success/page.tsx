@@ -8,19 +8,19 @@ import { formatDateWithDay, formatTime } from '@/lib/utils'
 import { PrintButton } from './PrintButton'
 import { getBoardingPasses } from '@/lib/data'
 
-interface BoardingPassData {
-	ticket_number: string
-	seat_number: string
-	first_name: string
-	last_name: string
-	departure_datetime: Date
-	arrival_datetime: Date
-	dep_code: string
-	dep_city: string
-	arr_code: string
-	arr_city: string
-	flight_number: string
-	airline: string
+export interface BoardingPassData {
+    ticket_number: string;
+    seat_number: string | null;
+    first_name: string;
+    last_name: string;
+    departure_datetime: Date;
+    arrival_datetime: Date;
+    dep_code: string;
+    dep_city: string;
+    arr_code: string;
+    arr_city: string;
+    flight_number: string;
+    airline: string;
 }
 
 interface PageProps {
@@ -66,13 +66,13 @@ export default async function CheckInSuccessPage({ searchParams }: PageProps) {
 			<div className='flex w-full max-w-2xl flex-col gap-8 print:w-full print:gap-4'>
 				{passes.map((data: BoardingPassData) => {
 					const departureDate = formatDateWithDay(
-						data.departure_datetime.toString()
+						data.departure_datetime
 					)
-					const departureTime = formatTime(data.departure_datetime.toString())
+					const departureTime = formatTime(data.departure_datetime)
 					const boardingTimeDate = new Date(
 						new Date(data.departure_datetime).getTime() - 40 * 60000
 					)
-					const boardingTime = formatTime(boardingTimeDate.toString())
+					const boardingTime = formatTime(boardingTimeDate)
 
 					return (
 						<Card

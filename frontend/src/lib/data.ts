@@ -10,6 +10,29 @@ import { IFlight } from '@/app/search/page'
 import { IPassengerCheck } from '@/shared/types/pessenger.type'
 import { BookingDetails } from '@/shared/types/bookins.interface'
 import { differenceInYears } from 'date-fns'
+import { BoardingPassData } from '@/app/check-in/success/page'
+export interface CheckInPassenger {
+    ticket_number: string;
+    seat_number: string | null;
+    check_in_status: string;
+    first_name: string;
+    last_name: string;
+    birth_date: Date;
+    is_infant: boolean;
+    passenger_id?: number;
+}
+
+export interface CheckInSessionData {
+    flight: {
+        flight_id: number;
+        departure_datetime: Date;
+        seat_map: any; 
+    };
+    passengers: CheckInPassenger[];
+    occupiedSeats: string[];
+}
+
+
 
 export async function getFlights(from: string, to: string, date: string, returnDate?: string) {
     try {
@@ -35,24 +58,24 @@ export async function getFlights(from: string, to: string, date: string, returnD
                 f.flight_id, 
                 s.flight_number, 
                 
-                -- Время (сконвертированное в местное)
-                (f.departure_datetime AT TIME ZONE dep.time_zone) as departure_datetime,
-                (f.arrival_datetime AT TIME ZONE arr.time_zone) as arrival_datetime,
+                -- Время: конвертируем в местное и отдаем как СТРОКУ (text), чтобы JS не умничал
+                (f.departure_datetime AT TIME ZONE dep.time_zone)::text as departure_datetime,
+                (f.arrival_datetime AT TIME ZONE arr.time_zone)::text as arrival_datetime,
                 
                 f.base_price,
                 
                 -- Вылет
                 dep.city AS departure_city, 
                 dep.iata_code AS departure_code, 
-                dep.time_zone AS departure_timezone,
-                dep.airport_name AS departure_airport_name, -- Новое поле (Название аэропорта)
+                dep.time_zone as departure_timezone,
+                dep.airport_name AS departure_airport_name,
                 
                 -- Прилет
                 arr.city AS arrival_city, 
                 arr.iata_code AS arrival_code,
-                arr.time_zone AS arrival_timezone,
-                arr.airport_name AS arrival_airport_name,   -- Новое поле
-                
+                arr.time_zone as arrival_timezone,
+                arr.airport_name AS arrival_airport_name,
+                EXTRACT(EPOCH FROM (f.arrival_datetime - f.departure_datetime)) / 60 as duration_minutes,
                 -- Авиакомпания
                 arl.name AS airline_name, 
                 arl.logo_url
@@ -76,7 +99,6 @@ export async function getFlights(from: string, to: string, date: string, returnD
         throw new Error('Failed to fetch flights.');
     }
 }
-
 export async function getFlightDetailsById(
 	flightId: string
 ): Promise<IFlight | null> {
@@ -120,19 +142,22 @@ export async function getBookingsByUserId(userId: string) {
 
 		const sqlQuery = `
             SELECT
-                b.booking_id,
-                b.baggage_option,
-                b.ticket_number,
-                f.flight_id, 
-                s.flight_number, 
-                f.departure_datetime, 
-                f.arrival_datetime, 
-                f.base_price,
-                dep.city AS departure_city,
-                arr.city AS arrival_city,
-                arl.name AS airline_name,
-                arl.logo_url
-            FROM Bookings b
+    b.booking_id,
+    b.baggage_option,
+    b.ticket_number,
+    b.status,  -- Добавлено
+    b.booking_datetime,  -- Добавлено для сортировки cancelled
+    f.flight_id, 
+    s.flight_number, 
+    f.departure_datetime, 
+    f.arrival_datetime, 
+    f.base_price,
+    dep.city AS departure_city,
+    EXTRACT(EPOCH FROM (f.arrival_datetime - f.departure_datetime)) / 60 as duration_minutes,
+    arr.city AS arrival_city,
+    arl.name AS airline_name,
+    arl.logo_url
+FROM Bookings b
             JOIN Passengers p ON b.passenger_id = p.passenger_id
             JOIN Flights f ON b.flight_id = f.flight_id
             JOIN Schedules s ON f.schedule_id = s.schedule_id
@@ -324,9 +349,14 @@ export async function getBookingDetails(
                 dep.city AS departure_city,
                 dep.iata_code AS departure_code,
                 f.departure_datetime,
+                dep.time_zone as departure_timezone,
+
+                (f.departure_datetime AT TIME ZONE dep.time_zone) as departure_datetime,
+
                 arr.city AS arrival_city,
                 arr.iata_code AS arrival_code,
                 f.arrival_datetime,
+                arr.time_zone as arrival_timezone,
                 f.base_price,
                 arl.name AS airline_name,
                 arl.logo_url
@@ -355,7 +385,7 @@ export async function getBookingDetails(
 		return null
 	}
 }
-export async function getCheckInSession(ticketNumber: string) {
+export async function getCheckInSession(ticketNumber: string): Promise<CheckInSessionData | null> {
 	// 1. Получаем PNR ... (без изменений)
 	const refRes = await pool.query(
 		`SELECT booking_reference, flight_id FROM Bookings WHERE ticket_number = $1 AND status = 'Confirmed'`,
@@ -427,7 +457,7 @@ export async function getCheckInSession(ticketNumber: string) {
 	}
 }
 
-export async function getBoardingPasses(ticketNumber: string) {
+export async function getBoardingPasses(ticketNumber: string): Promise<BoardingPassData[]> {
 	// 1. Узнаем PNR
 	const refRes = await pool.query(
 		`SELECT booking_reference FROM Bookings WHERE ticket_number = $1`,

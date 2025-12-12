@@ -15,7 +15,7 @@ import {
 import { useCities } from '@/hooks/use-cites'
 import { CityComboBox } from '@/components/custom-ui/search/CityComboBox'
 import { DatePicker } from '@/components/custom-ui/search/DatePicker'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { format } from 'date-fns'
 import { memo, useEffect } from 'react'
 
@@ -35,7 +35,7 @@ const formSchema = z.object({
             ) {
               return { message: 'Выберите дату вылета' }
             }
-            return { message: 'Неверный формат даты' } // Fallback для других ошибок
+            return { message: 'Неверный формат даты' } 
           }
         }),
         to: z
@@ -73,20 +73,36 @@ const formSchema = z.object({
 function InputQueryForm() {
   const { cities, isLoading } = useCities()
   const router = useRouter()
-  const form = useForm<z.infer<typeof formSchema>>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      from: '',
-      to: '',
-      date: undefined,
-      passengers: {
-        adults: 1,
-        children: 0,
-        infants: 0
-      }
-    },
-    mode: 'onChange' 
-  })
+  const searchParams = useSearchParams()
+
+	// 1. ПАРСИМ ПАРАМЕТРЫ ИЗ URL ДЛЯ DEFAULTS
+	const dateFromParam = searchParams.get('date')
+	const dateToParam = searchParams.get('returnDate')
+
+	// Превращаем строки 'YYYY-MM-DD' обратно в объекты Date
+	const defaultDate = dateFromParam
+		? {
+				from: new Date(dateFromParam),
+				to: dateToParam ? new Date(dateToParam) : undefined
+		  }
+		: undefined
+    const form = useForm<z.infer<typeof formSchema>>({
+      resolver: zodResolver(formSchema),
+      defaultValues: {
+        // ИСПРАВЛЕНИЕ ЗДЕСЬ:
+        from: searchParams.get('from') || '', // Берем город из URL
+        to: searchParams.get('to') || '',     // Берем город из URL
+        
+        date: defaultDate,
+        passengers: {
+          // Берем пассажиров из URL
+          adults: Number(searchParams.get('adults')) || 1,
+          children: Number(searchParams.get('children')) || 0,
+          infants: Number(searchParams.get('infants')) || 0
+        }
+      },
+      mode: 'onChange' 
+    })
 
   const { watch, trigger } = form
   const fromValue = watch('from')
@@ -94,25 +110,27 @@ function InputQueryForm() {
 
   
   useEffect(() => {
-    if (fromValue || toValue) {
-      trigger('from')
-      trigger('to')
-    }
-  }, [fromValue, toValue, trigger])
+		if (fromValue && toValue) {
+			trigger('to')
+		}
+	}, [fromValue, toValue, trigger])
 
   function onSubmit(values: z.infer<typeof formSchema>) {
-    const queryParams = new URLSearchParams({
-      from: values.from,
-      to: values.to,
-      date: format(values.date.from, 'yyyy-MM-dd'),
-      returnDate: values.date.to ? format(values.date.to, 'yyyy-MM-dd') : '',
-      adults: values.passengers.adults.toString(),
-      children: values.passengers.children.toString(),
-      infants: values.passengers.infants.toString()
-    })
-    if (!values.date.to) queryParams.delete('returnDate')
-    router.push(`/search?${queryParams.toString()}`)
-  }
+		const queryParams = new URLSearchParams({
+			from: values.from,
+			to: values.to,
+			date: format(values.date.from, 'yyyy-MM-dd'),
+			returnDate: values.date.to ? format(values.date.to, 'yyyy-MM-dd') : '',
+			adults: values.passengers.adults.toString(),
+			children: values.passengers.children.toString(),
+			infants: values.passengers.infants.toString()
+		})
+
+		if (!values.date.to) queryParams.delete('returnDate')
+		
+		// Используем replace, если не хотим захламлять историю, или push
+		router.push(`/search?${queryParams.toString()}`)
+	}
 
   return (
     <Form {...form}>

@@ -19,7 +19,8 @@ export interface IFlight {
 	departure_airport_name: string;
     arrival_airport_name: string;
 	departure_code:string;
-	arrival_code:string
+	arrival_code:string;
+	duration_minutes: number;
 }
 
 interface SearchPageProps {

@@ -135,8 +135,12 @@ DECLARE
     arr_tz VARCHAR(100);
     local_dep_ts TIMESTAMP WITHOUT TIME ZONE;
     local_arr_ts TIMESTAMP WITHOUT TIME ZONE;
+    
+    -- Новые переменные для проверки
+    final_dep_utc TIMESTAMP WITH TIME ZONE;
+    final_arr_utc TIMESTAMP WITH TIME ZONE;
 BEGIN
-    -- Получаем таймзоны аэропортов вылета и прилета
+    -- Получаем таймзоны
     SELECT time_zone INTO dep_tz FROM Airports WHERE airport_id = NEW.departure_airport_id;
     SELECT time_zone INTO arr_tz FROM Airports WHERE airport_id = NEW.arrival_airport_id;
 
@@ -146,21 +150,26 @@ BEGIN
         day_of_week := EXTRACT(ISODOW FROM flight_date);
         
         IF day_of_week = ANY(NEW.days_of_week) THEN
-            -- 1. Формируем "абстрактное" местное время (Дата + Время из расписания)
+            -- 1. Формируем местное время
             local_dep_ts := flight_date + NEW.departure_time;
-            
-            -- Для прилета учитываем сдвиг дней (offset)
             local_arr_ts := flight_date + NEW.arrival_time + (NEW.arrival_day_offset || ' days')::INTERVAL;
 
-            -- 2. Конвертируем в UTC, зная местную таймзону
-            -- AT TIME ZONE 'Zone' превращает локальное время в UTC timestamp with time zone
-            
+            -- 2. Конвертируем в UTC
+            final_dep_utc := local_dep_ts AT TIME ZONE dep_tz;
+            final_arr_utc := local_arr_ts AT TIME ZONE arr_tz;
+
+            -- 3. --- ЗАЩИТА ОТ ОШИБОК ---
+            IF final_arr_utc <= final_dep_utc THEN
+                RAISE EXCEPTION 'Ошибка расписания: Время прилета (%) не может быть раньше времени вылета (%). Проверьте "День прилета".', final_arr_utc, final_dep_utc;
+            END IF;
+            -- ---------------------------
+
             INSERT INTO flights (schedule_id, aircraft_id, departure_datetime, arrival_datetime, status, base_price)
             VALUES (
                 NEW.schedule_id,
                 (SELECT aircraft_id FROM aircrafts ORDER BY RANDOM() LIMIT 1),
-                local_dep_ts AT TIME ZONE dep_tz, -- Запишется как UTC
-                local_arr_ts AT TIME ZONE arr_tz, -- Запишется как UTC
+                final_dep_utc, -- Вставляем уже посчитанное значение
+                final_arr_utc, -- Вставляем уже посчитанное значение
                 'On Time',
                 floor(random() * (25000 - 3000 + 1) + 3000)
             );
@@ -170,6 +179,7 @@ BEGIN
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
+
 
 DROP TRIGGER IF EXISTS after_schedule_insert ON schedules;
 

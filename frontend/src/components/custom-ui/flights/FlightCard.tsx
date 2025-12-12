@@ -10,9 +10,9 @@ import { toast } from 'sonner'
 import { IFlight } from '@/app/search/page'
 import { 
 	formatTime, 
-	calculateDuration, 
 	formatDateWithDay, 
-	formatTimeZoneOffset 
+	formatTimeZoneOffset, 
+	formatDuration
 } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -50,10 +50,7 @@ function FlightCardComponent({ flight, isBooked = false }: IFlightCard) {
 	// Форматирование времени
 	const departureTime = formatTime(flight.departure_datetime)
 	const arrivalTime = formatTime(flight.arrival_datetime)
-	const duration = calculateDuration(
-		flight.departure_datetime,
-		flight.arrival_datetime
-	)
+	const duration = formatDuration(flight.duration_minutes);
 	const departureDate = formatDateWithDay(flight.departure_datetime)
 	const arrivalDate = formatDateWithDay(flight.arrival_datetime)
 	

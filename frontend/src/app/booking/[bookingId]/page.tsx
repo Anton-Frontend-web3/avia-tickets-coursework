@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation'
 import { ArrowLeft, Plane, User, CreditCard, ArrowDown } from 'lucide-react'
 
 import { getBookingDetails } from '@/lib/data'
-import { formatTime, formatDateWithDay } from '@/lib/utils'
+import { formatTime, formatDateWithDay, formatTimeZoneOffset } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
 	Card,
@@ -43,11 +43,12 @@ export default async function BookingDetailsPage({ params }: PageProps) {
 		? 'Оплачено и подтверждено'
 		: 'Бронирование отменено'
 
-	const departureDate = formatDateWithDay(booking.departure_datetime.toString())
-	const departureTime = formatTime(booking.departure_datetime.toString())
-	const arrivalDate = formatDateWithDay(booking.arrival_datetime.toString())
-	const arrivalTime = formatTime(booking.arrival_datetime.toString())
-
+	const departureDate = formatDateWithDay(booking.departure_datetime)
+	const departureTime = formatTime(booking.departure_datetime)
+	const arrivalDate = formatDateWithDay(booking.arrival_datetime)
+	const arrivalTime = formatTime(booking.arrival_datetime)
+	const depOffset = formatTimeZoneOffset(booking.departure_datetime.toISOString(), booking.departure_timezone);
+    const arrOffset = formatTimeZoneOffset(booking.arrival_datetime.toISOString(), booking.arrival_timezone);
 	const documentLabel = DOC_TYPE_LABELS[booking.document_type] || 'Документ'
 
 	const fullDocumentNumber = booking.document_series
@@ -114,6 +115,9 @@ export default async function BookingDetailsPage({ params }: PageProps) {
 									<p className='text-foreground text-2xl font-bold md:text-3xl'>
 										{departureTime}
 									</p>
+									<p className='text-[10px] font-medium text-primary mt-1'>
+                                        {depOffset}
+                                    </p>
 									<p className='text-muted-foreground text-sm font-medium'>
 										{departureDate}
 									</p>
@@ -137,6 +141,9 @@ export default async function BookingDetailsPage({ params }: PageProps) {
 									<p className='text-foreground text-2xl font-bold md:text-3xl'>
 										{arrivalTime}
 									</p>
+									<p className='text-[10px] font-medium text-primary mt-1'>
+                                        {arrOffset}
+                                    </p>
 									<p className='text-muted-foreground text-sm font-medium'>
 										{arrivalDate}
 									</p>
@@ -154,7 +161,7 @@ export default async function BookingDetailsPage({ params }: PageProps) {
 							<h3 className='text-lg font-semibold'>Пассажир</h3>
 						</div>
 
-						<div className='border-border bg-muted/20 grid grid-cols-1 gap-6 rounded-lg border p-4 sm:grid-cols-2'>
+						<div className='border-border grid grid-cols-1 gap-6 rounded-lg border p-4 sm:grid-cols-2'>
 							<div>
 								<p className='text-muted-foreground mb-1 text-xs'>
 									Фамилия Имя Отчество
@@ -202,7 +209,7 @@ export default async function BookingDetailsPage({ params }: PageProps) {
 				</CardContent>
 
 				{isConfirmed ? (
-					<CardFooter className='border-border bg-muted/40 flex flex-col items-center gap-4 border-t p-6 sm:flex-row sm:justify-between'>
+					<CardFooter className='border-border flex flex-col items-center gap-4 border-t p-6 sm:flex-row sm:justify-between'>
 						<div
 							className={`w-full rounded-full border px-4 py-1.5 text-center text-sm font-medium sm:w-fit ${statusClasses}`}
 						>

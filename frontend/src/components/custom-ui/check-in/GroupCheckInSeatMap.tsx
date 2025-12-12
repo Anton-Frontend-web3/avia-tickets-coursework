@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button'
 import { toast } from 'sonner'
 import { User, Check, Loader2, Users, Baby } from 'lucide-react'
 import { processGroupCheckIn } from '@/lib/actions'
-
+import { useRouter } from 'next/navigation'
 interface Passenger {
 	ticket_number: string
 	first_name: string
@@ -43,7 +43,7 @@ export function GroupCheckInSeatMap({
 	)
 
 	const [isPending, setIsPending] = useState(false)
-
+	const router = useRouter()
 	const getBaseSeatPrice = (row: number, letter: string) => {
 		let price = 0
 		if (layout.rowPrices?.[row.toString()])
@@ -115,23 +115,38 @@ export function GroupCheckInSeatMap({
 	}
 
 	const handleConfirm = async () => {
-		if (Object.keys(selections).length < passengersNeedSeats.length) {
-			toast.error('Пожалуйста, выберите места для всех взрослых и детей')
-			return
-		}
+        if (Object.keys(selections).length < passengersNeedSeats.length) {
+            toast.error('Пожалуйста, выберите места для всех взрослых и детей')
+            return
+        }
 
-		setIsPending(true)
-		try {
-			const infantTickets = passengers
-				.filter(p => p.is_infant)
-				.map(p => p.ticket_number)
-			await processGroupCheckIn(selections, infantTickets)
-		} catch (e) {
-			toast.error('Ошибка сохранения')
-			setIsPending(false)
-		}
-	}
+        setIsPending(true)
+        
+        try {
+            const infantTickets = passengers
+                .filter(p => p.is_infant)
+                .map(p => p.ticket_number)
 
+            // 3. Вызываем экшен и ждем ответ
+            const result = await processGroupCheckIn(selections, infantTickets)
+
+            // 4. Проверяем результат
+            if (result && result.success && result.ticketNumber) {
+                toast.success("Регистрация успешна!")
+                // 5. Делаем редирект на клиенте
+                router.push(`/check-in/success?ticket=${result.ticketNumber}`)
+            } else {
+                // Если сервер вернул ошибку (например, SEAT_TAKEN)
+                toast.error(result?.error || "Неизвестная ошибка")
+                setIsPending(false) // Разблокируем кнопку, чтобы можно было перевыбрать место
+            }
+
+        } catch (e) {
+            toast.error("Ошибка соединения")
+            setIsPending(false)
+        }
+    }
+	
 	return (
 		<div className='flex flex-col-reverse gap-6 lg:grid lg:grid-cols-4'>
 			{/* ЛЕВАЯ КОЛОНКА (СПИСОК ПАССАЖИРОВ) */}

@@ -417,10 +417,20 @@ export async function createSchedule(
 			]
 		)
         // Триггер в БД сам сгенерирует рейсы (Flights)
-	} catch (error) {
-		console.error('Database Error: Failed to create schedule.', error)
-		return { success: false, error: 'Не удалось создать расписание.' }
-	}
+	} catch (error: any) { // Добавьте : any или unknown
+        // Если была транзакция в updateSchedule, не забудьте ROLLBACK
+        // await client.query('ROLLBACK') 
+        
+        console.error('Schedule Error:', error)
+        
+        // Проверяем, наша ли это ошибка из базы
+        if (error.message && error.message.includes('Ошибка расписания')) {
+             // Возвращаем текст ошибки из базы данных
+             return { success: false, error: "Некорректное время: Прилет раньше вылета. Увеличьте 'День прилета'." }
+        }
+
+        return { success: false, error: 'Не удалось сохранить расписание.' }
+    }
 
 	revalidatePath('/admin/schedules')
 	redirect('/admin/schedules')
@@ -602,11 +612,20 @@ export async function updateSchedule(scheduleId: number, data: unknown) {
 		}
 
 		await client.query('COMMIT')
-	} catch (error) {
-		await client.query('ROLLBACK')
-		console.error('Update Schedule Error:', error)
-		return { success: false, error: 'Не удалось обновить расписание.' }
-	} finally {
+	} catch (error: any) { // Добавьте : any или unknown
+        // Если была транзакция в updateSchedule, не забудьте ROLLBACK
+        // await client.query('ROLLBACK') 
+        
+        console.error('Schedule Error:', error)
+        
+        // Проверяем, наша ли это ошибка из базы
+        if (error.message && error.message.includes('Ошибка расписания')) {
+             // Возвращаем текст ошибки из базы данных
+             return { success: false, error: "Некорректное время: Прилет раньше вылета. Увеличьте 'День прилета'." }
+        }
+
+        return { success: false, error: 'Не удалось сохранить расписание.' }
+    } finally {
 		client.release()
 	}
 
@@ -1014,14 +1033,17 @@ export async function processSeatSelection(
 
 export async function processGroupCheckIn(
 	selections: Record<string, string>,
-	infantTickets: string[] = [] // По умолчанию пустой массив
+	infantTickets: string[] = []
 ) {
 	const client = await pool.connect()
+    let successTicketNumber: string | null = null;
+
 	try {
 		await client.query('BEGIN')
 
 		// 1. Регистрируем пассажиров с местами
 		for (const [ticketNumber, seatNumber] of Object.entries(selections)) {
+            // ... (ваш код проверки SEAT_TAKEN) ...
 			const result = await client.query(
 				`
                 WITH target AS (
@@ -1046,32 +1068,30 @@ export async function processGroupCheckIn(
 			}
 		}
 
-		// 2. Регистрируем младенцев (без места)
+		// 2. Регистрируем младенцев
 		for (const ticketNumber of infantTickets) {
 			const updated = await client.query(
-				`
-                UPDATE Bookings 
-                SET seat_number = NULL, check_in_status = 'Checked-in'
-                WHERE ticket_number = $1
-            `,
+				`UPDATE Bookings SET seat_number = NULL, check_in_status = 'Checked-in' WHERE ticket_number = $1`,
 				[ticketNumber]
 			)
-
-			if (updated.rowCount === 0) {
-				throw new Error('TICKET_NOT_FOUND')
-			}
+			if (updated.rowCount === 0) throw new Error('TICKET_NOT_FOUND')
 		}
 
 		await client.query('COMMIT')
+        
+        successTicketNumber = Object.keys(selections)[0] || infantTickets[0];
+        
+        // --- ИЗМЕНЕНИЕ: ВОЗВРАЩАЕМ УСПЕХ, А НЕ ДЕЛАЕМ РЕДИРЕКТ ---
+        return { success: true, ticketNumber: successTicketNumber }
 
-		// Редирект на любой билет из группы (включая младенца, так как PNR один)
-		const firstTicket = Object.keys(selections)[0] || infantTickets[0]
-		redirect(`/check-in/success?ticket=${firstTicket}`)
-	} catch (e) {
-		if (isRedirectError(e)) throw e
+	} catch (e: any) {
 		await client.query('ROLLBACK').catch(() => null)
 		console.error(e)
-		return { error: 'Ошибка сохранения' }
+        
+        if (e.message === 'SEAT_TAKEN') {
+            return { success: false, error: 'Выбранное место уже занято.' }
+        }
+		return { success: false, error: 'Ошибка при сохранении данных.' }
 	} finally {
 		client.release()
 	}

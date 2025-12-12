@@ -124,7 +124,7 @@ export function ScheduleForm({
                     control={form.control}
                     name='flight_number'
                     render={({ field }) => (
-                        <FormItem className='relative'>
+                        <FormItem>
                             <FormLabel>Номер рейса</FormLabel>
                             <FormControl>
                                 <Input
@@ -132,7 +132,7 @@ export function ScheduleForm({
                                     {...field}
                                 />
                             </FormControl>
-                            <FormMessage className='absolute top-full left-0 mt-1 text-xs' />
+                            <FormMessage />
                         </FormItem>
                     )}
                 />
@@ -143,7 +143,7 @@ export function ScheduleForm({
                     control={form.control}
                     name='departure_airport_id'
                     render={({ field }) => (
-                        <FormItem className='relative'>
+                        <FormItem>
                             <FormLabel>Откуда</FormLabel>
                             <Select
                                 onValueChange={field.onChange}
@@ -158,7 +158,7 @@ export function ScheduleForm({
                                     {airportItems}
                                 </SelectContent>
                             </Select>
-                            <FormMessage className='absolute top-full left-0 mt-1 text-xs'/>
+                            <FormMessage />
                         </FormItem>
                     )}
                 />
@@ -174,7 +174,7 @@ export function ScheduleForm({
                         const departureCity = departureAirport ? departureAirport.label.split(' - ')[0].trim() : '';
 
                         return (
-                            <FormItem className='relative'>
+                            <FormItem>
                                 <FormLabel>Куда</FormLabel>
                                 <Select
                                     onValueChange={field.onChange}
@@ -203,7 +203,7 @@ export function ScheduleForm({
                                         })}
                                     </SelectContent>
                                 </Select>
-                                <FormMessage className='absolute top-full left-0 mt-1 text-xs' />
+                                <FormMessage />
                             </FormItem>
                         );
                     }}
@@ -216,7 +216,7 @@ export function ScheduleForm({
                         control={form.control}
                         name='departure_time'
                         render={({ field }) => (
-                            <FormItem className='relative'>
+                            <FormItem>
                                 <FormLabel>Время вылета (местное)</FormLabel>
                                 <FormControl>
                                     <Input
@@ -224,7 +224,7 @@ export function ScheduleForm({
                                         {...field}
                                     />
                                 </FormControl>
-                                <FormMessage className='absolute top-full left-0 mt-1 text-xs' />
+                                <FormMessage />
                             </FormItem>
                         )}
                     />
@@ -234,7 +234,7 @@ export function ScheduleForm({
                         control={form.control}
                         name='arrival_time'
                         render={({ field }) => (
-                            <FormItem className='relative'>
+                            <FormItem>
                                 <FormLabel>Время прилета (местное)</FormLabel>
                                 <FormControl>
                                     <Input
@@ -242,7 +242,7 @@ export function ScheduleForm({
                                         {...field}
                                     />
                                 </FormControl>
-                                <FormMessage className='absolute top-full left-0 mt-1 text-xs' />
+                                <FormMessage />
                             </FormItem>
                         )}
                     />
@@ -252,7 +252,7 @@ export function ScheduleForm({
                         control={form.control}
                         name='arrival_day_offset'
                         render={({ field }) => (
-                            <FormItem className='relative'>
+                            <FormItem>
                                 <FormLabel>День прилета</FormLabel>
                                 <Select
                                     onValueChange={field.onChange}
@@ -271,7 +271,7 @@ export function ScheduleForm({
                                         <SelectItem value="-1">Предыдущий день (-1)</SelectItem>
                                     </SelectContent>
                                 </Select>
-                                <FormMessage className='absolute top-full left-0 mt-1 text-xs' />
+                                <FormMessage />
                             </FormItem>
                         )}
                     />
@@ -299,7 +299,7 @@ export function ScheduleForm({
                                             return (
                                                 <FormItem
                                                     key={day.id}
-                                                    className=' relative flex flex-row items-center space-y-0 space-x-2'
+                                                    className='flex flex-row items-center space-y-0 space-x-2'
                                                 >
                                                     <FormControl>
                                                         <Checkbox
@@ -324,7 +324,7 @@ export function ScheduleForm({
                                     />
                                 ))}
                             </div>
-                            <FormMessage className='absolute top-full left-0 mt-1 text-xs' />
+                            <FormMessage />
                         </FormItem>
                     )}
                 />
