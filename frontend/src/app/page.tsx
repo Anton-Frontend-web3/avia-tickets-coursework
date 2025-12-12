@@ -1,5 +1,12 @@
+import nextDynamic from 'next/dynamic'
 import { Suspense } from 'react'
-import InputQueryForm from '@/components/custom-ui/search/InputQueryForm'
+
+export const dynamic = 'force-dynamic'
+
+const InputQueryForm = nextDynamic(
+  () => import('@/components/custom-ui/search/InputQueryForm'),
+  { ssr: false }
+)
 
 export default function HomePage() {
   return (
