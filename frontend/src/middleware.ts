@@ -14,7 +14,12 @@ export async function middleware(req: NextRequest) {
     req,
     secret: process.env.AUTH_SECRET, // <-- как у тебя в NextAuth
   })
-
+  console.log('MW:', {
+	hasToken: !!token,
+	tokenId: (token as any)?.id,
+	role: (token as any)?.role,
+	path: pathname,
+  })
   // ✅ token.id — твоя реальность
   const tokenId = (token as any)?.id as string | undefined
   const role = (token as any)?.role as string | undefined
