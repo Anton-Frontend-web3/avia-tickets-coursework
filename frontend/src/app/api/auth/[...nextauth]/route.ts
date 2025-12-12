@@ -136,7 +136,7 @@ export const authOptions: NextAuthOptions = {
     signIn: '/login',
     // error: '/auth/error' // Можно добавить страницу ошибок
   },
-  secret: process.env.AUTH_SECRET
+  secret: process.env.NEXTAUTH_SECRET
 }
 
 const handler = NextAuth(authOptions)

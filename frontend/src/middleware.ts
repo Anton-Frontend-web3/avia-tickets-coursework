@@ -10,24 +10,25 @@ function isPublicPath(pathname: string) {
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl
 
-  const token = await getToken({
-    req,
-    secret: process.env.AUTH_SECRET, // <-- как у тебя в NextAuth
-  })
-  console.log('MW:', {
-	hasToken: !!token,
-	tokenId: (token as any)?.id,
-	role: (token as any)?.role,
-	path: pathname,
-  })
-  // ✅ token.id — твоя реальность
-  const tokenId = (token as any)?.id as string | undefined
-  const role = (token as any)?.role as string | undefined
-  const isAuth = Boolean(tokenId)
+  const token =
+    (await getToken({
+      req,
+      secret: process.env.NEXTAUTH_SECRET,
+      cookieName: '__Secure-next-auth.session-token',
+    })) ||
+    (await getToken({
+      req,
+      secret: process.env.NEXTAUTH_SECRET,
+      cookieName: 'next-auth.session-token',
+    }))
 
+  const tokenId = (token as any)?.id ?? token?.sub
+  const role = (token as any)?.role
+  const isAuth = Boolean(tokenId)
   const publicPath = isPublicPath(pathname)
 
-  // --- НЕ АВТОРИЗОВАН ---
+  console.log('MW:', { hasToken: !!token, tokenId, role, path: pathname })
+
   if (!isAuth) {
     if (pathname === '/' || publicPath) return NextResponse.next()
 
@@ -36,7 +37,6 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  // --- АВТОРИЗОВАН ---
   if (publicPath) {
     if (role === 'admin') return NextResponse.redirect(new URL('/admin/dashboard', req.url))
     if (role === 'agent') return NextResponse.redirect(new URL('/agent/check-in', req.url))
@@ -63,3 +63,6 @@ export async function middleware(req: NextRequest) {
 export const config = {
   matcher: ['/((?!api|_next/static|_next/image|favicon.ico).*)'],
 }
+
+// ✅ важно
+export const runtime = 'nodejs'
