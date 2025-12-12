@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input'
 // Схему zod оставляем без изменений, она идеальна
 const formSchema = z.object({
 	email: z.email({ message: 'Пожалуйста, введите корректный email.' }),
-	password: z.string().min(8, { message: 'Пожалуйста, введите пароль.' }) // Убрал min(8) для удобства теста
+	password: z.string().min(8, { message: 'Пожалуйста, введите пароль.' })
 })
 
 // 1. Изменяем тип экшена
@@ -80,7 +80,7 @@ export function AuthForm({
 						<FormItem>
 							<FormLabel>Password</FormLabel>
 							<FormControl>
-								<Input
+								<Input type="password"
 									placeholder='Enter password...'
 									{...field}
 								/>
