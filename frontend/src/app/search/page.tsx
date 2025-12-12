@@ -1,4 +1,9 @@
-import InputQueryForm from '@/components/custom-ui/search/InputQueryForm'
+import dynamic from 'next/dynamic'
+
+const InputQueryForm = dynamic(
+  () => import('@/components/custom-ui/search/InputQueryForm'),
+  { ssr: false }
+)
 import { FlightList } from '@/components/custom-ui/flights/FlightList'
 import { getFlights } from '@/lib/data'
 
