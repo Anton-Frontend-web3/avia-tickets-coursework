@@ -9,8 +9,6 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
 
-  // ❌ УБРАЛИ standalone — для Vercel он не нужен
-
   images: {
     remotePatterns: [
       {
