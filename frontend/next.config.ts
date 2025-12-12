@@ -9,10 +9,8 @@ const nextConfig: NextConfig = {
     ignoreDuringBuilds: true,
   },
 
-  // docker
-  output: "standalone",
+  // ❌ УБРАЛИ standalone — для Vercel он не нужен
 
-  // next/image remote
   images: {
     remotePatterns: [
       {
